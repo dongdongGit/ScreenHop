@@ -1,6 +1,7 @@
 #![allow(unexpected_cfgs)]
 
 mod engine;
+mod slint_ui;
 mod tray;
 
 use anyhow::{Context, Result};

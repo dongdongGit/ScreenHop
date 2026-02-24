@@ -25,6 +25,22 @@ pub struct AppConfig {
     /// 标题栏检测高度（像素）
     #[serde(default = "default_title_bar_height")]
     pub title_bar_height: f64,
+
+    /// 是否启用代理
+    #[serde(default)]
+    pub proxy_enabled: bool,
+
+    /// 代理地址（如 http://127.0.0.1:7890、socks5://127.0.0.1:1080）
+    #[serde(default)]
+    pub proxy_url: String,
+
+    /// 代理用户名（可选）
+    #[serde(default)]
+    pub proxy_username: Option<String>,
+
+    /// 代理密码（可选）
+    #[serde(default)]
+    pub proxy_password: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -43,6 +59,10 @@ impl Default for AppConfig {
             start_minimized: false,
             auto_check_update: true,
             title_bar_height: default_title_bar_height(),
+            proxy_enabled: false,
+            proxy_url: String::new(),
+            proxy_username: None,
+            proxy_password: None,
         }
     }
 }
@@ -108,6 +128,10 @@ mod tests {
         assert!(!config.start_minimized);
         assert!(config.auto_check_update);
         assert_eq!(config.title_bar_height, 40.0);
+        assert!(!config.proxy_enabled);
+        assert!(config.proxy_url.is_empty());
+        assert!(config.proxy_username.is_none());
+        assert!(config.proxy_password.is_none());
     }
 
     #[test]

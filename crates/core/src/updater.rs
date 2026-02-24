@@ -67,7 +67,12 @@ fn find_matching_asset(assets: &[GithubAsset]) -> Option<&GithubAsset> {
 }
 
 /// 检查是否有新版本
-pub async fn check_for_update(current_version: &str) -> Result<UpdateCheckResult> {
+pub async fn check_for_update(
+    current_version: &str,
+    proxy_url: Option<&str>,
+    proxy_username: Option<&str>,
+    proxy_password: Option<&str>,
+) -> Result<UpdateCheckResult> {
     let mut result = UpdateCheckResult {
         has_update: false,
         latest_version: String::new(),
@@ -79,11 +84,19 @@ pub async fn check_for_update(current_version: &str) -> Result<UpdateCheckResult
         error_message: None,
     };
 
-    let client = reqwest::Client::builder()
+    let mut builder = reqwest::Client::builder()
         .user_agent("ScreenHop-UpdateChecker")
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .context("创建 HTTP 客户端失败")?;
+        .timeout(std::time::Duration::from_secs(15));
+
+    if let Some(proxy) = proxy_url {
+        let mut proxy_obj = reqwest::Proxy::all(proxy).context("代理地址格式错误")?;
+        if let (Some(user), Some(pass)) = (proxy_username, proxy_password) {
+            proxy_obj = proxy_obj.basic_auth(user, pass);
+        }
+        builder = builder.proxy(proxy_obj);
+    }
+
+    let client = builder.build().context("创建 HTTP 客户端失败")?;
 
     let response = client
         .get(GITHUB_API_URL)

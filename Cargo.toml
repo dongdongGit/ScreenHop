@@ -22,3 +22,10 @@ toml = "0.8"
 semver = "1.0"
 reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1", features = ["rt", "macros"] }
+
+[profile.release]
+opt-level = "z"   # "z" 优先优化二进制体积大小（如果更看重极致 CPU 计算性能，可改为 3）
+lto = true        # 开启链接时优化 (Link Time Optimization)，全局移除未使用的代码
+codegen-units = 1 # 将所有的代码作为一个单元编译，牺牲编译时间换取最深度的优化
+panic = "abort"   # 桌面应用通常不需要捕获和展开 panic 堆栈，直接 abort 可以显著减小体积
+strip = true      # 剥离二进制文件中的调试符号 (macOS/Linux 下极大地减小文件大小)
