@@ -20,15 +20,18 @@ impl WinHitTester {
 impl HitTester for WinHitTester {
     fn is_title_bar_hit(&self, handle: &WindowHandle, point: Point) -> bool {
         unsafe {
-            let hwnd = HWND(handle.inner.hwnd as *mut _);
+            let hwnd = HWND(handle.inner.hwnd);
 
             // 使用 WM_NCHITTEST 判断是否在标题栏
-            let lparam = ((point.y as i32 & 0xFFFF) << 16) | (point.x as i32 & 0xFFFF);
+            // MAKELPARAM: low word = x, high word = y
+            let x = (point.x as i32) as u16 as u32;
+            let y = (point.y as i32) as u16 as u32;
+            let lparam = LPARAM(((y << 16) | x) as isize);
             let result = SendMessageW(
                 hwnd,
                 WM_NCHITTEST,
                 WPARAM(0),
-                LPARAM(lparam as isize),
+                lparam,
             );
 
             result.0 as i32 == HTCAPTION
@@ -39,7 +42,7 @@ impl HitTester for WinHitTester {
         // 检查是否在 Explorer 标签页上
         // 使用 UI Automation 检测（需要 IUIAutomation 接口）
         unsafe {
-            let hwnd = HWND(handle.inner.hwnd as *mut _);
+            let hwnd = HWND(handle.inner.hwnd);
 
             // 获取窗口类名
             let mut class_name = [0u16; 256];
