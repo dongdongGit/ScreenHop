@@ -15,7 +15,6 @@ env_logger = "0.11"
 anyhow.workspace = true
 tray-icon = "0.21.3"
 muda = "0.17.1"
-single-instance = "0.3"
 open = "5"
 tokio.workspace = true
 tao = "0.34.5"
@@ -26,3 +25,11 @@ imageproc = "0.26.0"
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"
 objc = "0.2"
+
+[package.metadata.bundle]
+name = "ScreenHop"
+identifier = "com.dongdong.screenhop"
+icon = ["../../assets/ScreenHop.icns"]
+version = "1.0.0"
+copyright = "Copyright © dongdong"
+short_description = "A window moving tool"

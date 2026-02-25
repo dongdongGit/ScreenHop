@@ -5,24 +5,28 @@ mod slint_ui;
 mod tray;
 
 use anyhow::{Context, Result};
-use single_instance::SingleInstance;
+use std::net::TcpListener;
 use screenhop_core::config::AppConfig;
 
 const APP_ID: &str = "com.dongdong.screenhop";
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-fn main() -> Result<()> {
-    // 初始化日志
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .format_timestamp_millis()
-        .init();
+/// 使用 TCP 端口锁实现单实例检测（避免 single-instance crate 在 .app 中的文件系统只读问题）
+fn try_lock_single_instance() -> bool {
+    // 绑定一个固定的本地端口；成功则说明当前是唯一实例
+    match TcpListener::bind("127.0.0.1:57832") {
+        Ok(listener) => {
+            // 把监听器泄露到堆上，让它在进程退出前一直持有端口
+            Box::leak(Box::new(listener));
+            true
+        }
+        Err(_) => false, // 端口被占用，说明已有实例在运行
+    }
+}
 
-    log::info!("ScreenHop v{} 启动中...", APP_VERSION);
-
+fn inner_main() -> Result<()> {
     // 单实例检测
-    let instance = SingleInstance::new(APP_ID).context("单实例检测失败")?;
-
-    if !instance.is_single() {
+    if !try_lock_single_instance() {
         log::warn!("程序已在运行中，退出");
         return Ok(());
     }
@@ -36,14 +40,37 @@ fn main() -> Result<()> {
     {
         let platform = screenhop_platform::create_platform();
 
-        // 检查辅助功能权限
-        if !platform.check_accessibility_permissions() {
-            log::error!("缺少辅助功能权限，请在系统设置中授权");
-        }
+        let has_perm = platform.check_accessibility_permissions();
+        if !has_perm {
+            log::warn!("缺少辅助功能权限，正在触发系统授权提示...");
+            // 触发 macOS 系统权限请求对话框
+            platform.request_accessibility_permissions();
+            
+            // 为了防止系统自带弹窗没弹出来（macOS 经常吞弹窗），加上我们自己的弹窗引导
+            let script = r#"
+                display alert "ScreenHop 需要「辅助功能」权限" message "ScreenHop 需要该权限来监听鼠标中键移动窗口。\n\n请在随后的系统设置中，找到并勾选 ScreenHop。" buttons {"前往授权", "稍后"} default button 1
+                if button returned of result is "前往授权" then
+                    tell application "System Settings"
+                        activate
+                        reveal anchor "Privacy_Accessibility" of pane id "com.apple.settings.PrivacySecurity.extension"
+                    end tell
+                    
+                    -- Fallback for older macOS versions
+                    tell application "System Preferences"
+                        activate
+                        reveal anchor "Privacy_Accessibility" of pane id "com.apple.preference.security"
+                    end tell
+                end if
+            "#;
+            let _ = std::process::Command::new("osascript").arg("-e").arg(script).output();
 
-        // 安装鼠标中键事件钩子
-        if !config.disable_hook {
-            engine::install_hook(&config)?;
+            // 权限不足时跳过钩子安装，但继续运行展示托盘图标
+            log::warn!("已跳过鼠标钩子安装（缺少权限），请授权后重启 ScreenHop");
+        } else {
+            // 安装鼠标中键事件钩子
+            if !config.disable_hook {
+                engine::install_hook(&config)?;
+            }
         }
 
         // 启动系统托盘 + NSApp 事件循环（阻塞）
@@ -64,4 +91,21 @@ fn main() -> Result<()> {
 
     log::info!("ScreenHop 已退出");
     Ok(())
+}
+
+fn main() {
+    // 初始化日志到文件，方便 Finder 启动时调试
+    let log_file = std::fs::File::create("/tmp/screenhop_run.log").unwrap();
+    let target = Box::new(log_file);
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format_timestamp_millis()
+        .target(env_logger::Target::Pipe(target))
+        .init();
+
+    log::info!("ScreenHop v{} 启动中...", APP_VERSION);
+
+    if let Err(e) = inner_main() {
+        log::error!("致命错误导致应用退出: {:?}", e);
+        std::fs::write("/tmp/screenhop_fatal_err.log", format!("{:?}", e)).ok();
+    }
 }
