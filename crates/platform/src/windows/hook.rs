@@ -36,7 +36,7 @@ impl WinMouseHook {
             let hook = SetWindowsHookExW(
                 WH_MOUSE_LL,
                 Some(low_level_mouse_proc),
-                h_instance.into(),
+                h_instance,
                 0,
             )?;
 

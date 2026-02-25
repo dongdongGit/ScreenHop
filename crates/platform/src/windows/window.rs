@@ -4,7 +4,7 @@ use screenhop_core::{Point, Rect};
 use crate::{WindowHandle, WindowManager};
 use super::WinWindowHandle;
 
-use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
+use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 /// Windows 窗口管理器（基于 Win32 API）

@@ -19,7 +19,7 @@ impl MonitorManager for WinMonitorManager {
         let mut monitors = Vec::new();
 
         unsafe {
-            let data = &mut monitors as *mut Vec<MonitorInfo> as LPARAM;
+            let data = LPARAM(&mut monitors as *mut Vec<MonitorInfo> as isize);
             let _ = EnumDisplayMonitors(None, None, Some(enum_monitor_proc), data);
         }
 
