@@ -2,7 +2,7 @@ use screenhop_core::Point;
 
 use crate::{HitTester, WindowHandle};
 
-use windows::Win32::Foundation::{HWND, LPARAM, POINT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 const WM_NCHITTEST: u32 = 0x0084;
@@ -35,7 +35,7 @@ impl HitTester for WinHitTester {
         }
     }
 
-    fn is_interactive_tab(&self, handle: &WindowHandle, point: Point) -> bool {
+    fn is_interactive_tab(&self, handle: &WindowHandle, _point: Point) -> bool {
         // 检查是否在 Explorer 标签页上
         // 使用 UI Automation 检测（需要 IUIAutomation 接口）
         unsafe {
