@@ -11,6 +11,7 @@ const MENU_ID_AUTOSTART: &str = "autostart";
 const MENU_ID_CHECK_UPDATE: &str = "check_update";
 const MENU_ID_PROXY_ENABLE: &str = "proxy_enable";
 const MENU_ID_PROXY_SETTINGS: &str = "proxy_settings";
+const MENU_ID_AUTO_CHECK_UPDATE: &str = "auto_check_update";
 const MENU_ID_QUIT: &str = "quit";
 
 /// 创建托盘图标（使用真实的 png）
@@ -28,7 +29,9 @@ fn create_tray_icon_image() -> Icon {
     Icon::from_rgba(rgba, width, height).expect("创建托盘图标失败")
 }
 
-/// 在后台线程中执行更新检查
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// 在后台线程中执行更新检查和下载
 fn do_check_update(
     version: &str,
     proxy_url: Option<String>,
@@ -36,14 +39,14 @@ fn do_check_update(
     proxy_password: Option<String>,
     manual: bool,
 ) {
-    let version = version.to_string();
+    let version_str = version.to_string();
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap();
         rt.block_on(async {
-            match screenhop_core::updater::check_for_update(&version, proxy_url.as_deref(), proxy_username.as_deref(), proxy_password.as_deref()).await {
+            match screenhop_core::updater::check_for_update(&version_str, proxy_url.as_deref(), proxy_username.as_deref(), proxy_password.as_deref()).await {
                 Ok(result) => {
                     if result.has_update {
                         log::info!(
@@ -51,27 +54,199 @@ fn do_check_update(
                             result.current_version,
                             result.latest_version
                         );
-                        if manual {
-                            #[cfg(target_os = "macos")]
-                            {
-                                let script = format!(
-                                    "display dialog \"发现新版本: {} \\n是否前往下载？\" with title \"ScreenHop 更新\" buttons {{\"取消\", \"前往下载\"}} default button 2",
-                                    result.latest_version
-                                );
-                                if let Ok(out) = std::process::Command::new("osascript").arg("-e").arg(&script).output() {
-                                    if String::from_utf8_lossy(&out.stdout).contains("前往下载") {
-                                        let _ = open::that(&result.release_url);
-                                    }
+                        
+                        let mut should_update = false;
+                        
+                        // 1. 询问用户是否立即更新
+                        #[cfg(target_os = "macos")]
+                        {
+                            let script = format!(
+                                "display dialog \"发现新版本: {} \\n是否立即下载并安装？\" with title \"ScreenHop 更新\" buttons {{\"稍后\", \"立即更新\"}} default button 2",
+                                result.latest_version
+                            );
+                            if let Ok(out) = std::process::Command::new("osascript").arg("-e").arg(&script).output() {
+                                if String::from_utf8_lossy(&out.stdout).contains("立即更新") {
+                                    should_update = true;
                                 }
                             }
-                            #[cfg(not(target_os = "macos"))]
-                            {
-                                let _ = open::that(&result.release_url);
-                            }
+                        }
+                        
+                        #[cfg(target_os = "windows")]
+                        {
+                            // 简单的弹窗或直接下载，暂时对 Windows 可以默认 true （在实际发布时需要加 Win32 MessageBox）
+                            // 为了简化，此处先用控制台输出 + 直接更新，或者可以加上 msg 指令
+                            should_update = true;
+                        }
+
+                        if !should_update {
+                            log::info!("用户取消了更新");
+                            return;
+                        }
+                        
+                        // 2. 显示进度对话框并开始下载
+                        if let Some(download_url) = result.download_url {
+                            let proxy_url_clone2 = proxy_url.clone();
+                            let proxy_username_clone2 = proxy_username.clone();
+                            let proxy_password_clone2 = proxy_password.clone();
+                            slint::invoke_from_event_loop(move || {
+                                // 在主线程创建并显示进度框
+                                if let Ok(dialog) = crate::slint_ui::UpdateProgressDialog::new() {
+                                    #[cfg(target_os = "macos")]
+                                    dialog.set_text_font("Heiti SC".into());
+                                    #[cfg(target_os = "windows")]
+                                    dialog.set_text_font("Microsoft YaHei".into());
+
+                                    dialog.set_status_text("准备下载...".into());
+                                    dialog.set_progress(0.0);
+                                    dialog.set_can_cancel(true);
+                                    
+                                    let dialog_weak = dialog.as_weak();
+                                    
+                                    // 标记是否取消下载
+                                    let is_cancelled = Arc::new(AtomicBool::new(false));
+                                    let is_cancelled_clone = is_cancelled.clone();
+                                    
+                                    dialog.on_cancel(move || {
+                                        is_cancelled_clone.store(true, Ordering::SeqCst);
+                                        // 立即隐藏对话框，无需等待后台线程结束
+                                        if let Some(d) = dialog_weak.upgrade() {
+                                            let _ = d.hide();
+                                        }
+                                    });
+                                    
+                                    let _ = dialog.show();
+                                    
+                                    // 共享状态供后台线程和UI线程通讯 (progress, text, can_cancel, finished)
+                                    let progress_state = Arc::new(std::sync::Mutex::new((0.0f32, String::new(), true, false)));
+                                    
+                                    let timer_rc = std::rc::Rc::new(std::cell::RefCell::new(Some(slint::Timer::default())));
+                                    let timer_clone = timer_rc.clone();
+                                    
+                                    let progress_state_timer = progress_state.clone();
+                                    let is_cancelled_timer = is_cancelled.clone();
+                                    let d_weak_timer = dialog.as_weak();
+                                    
+                                    timer_rc.borrow().as_ref().unwrap().start(slint::TimerMode::Repeated, std::time::Duration::from_millis(100), move || {
+                                        let mut finished = false;
+                                        let is_cancelled_now = is_cancelled_timer.load(Ordering::SeqCst);
+
+                                        if let Some(d) = d_weak_timer.upgrade() {
+                                            let (pct, text, can_cancel, is_done) = {
+                                                let state = progress_state_timer.lock().unwrap();
+                                                (state.0, state.1.clone(), state.2, state.3)
+                                            };
+
+                                            // 取消进行中时不覆盖 UI 文字（保持"正在取消..."）
+                                            if !is_cancelled_now && !text.is_empty() {
+                                                d.set_status_text(text.into());
+                                                d.set_progress(pct);
+                                                d.set_can_cancel(can_cancel);
+                                            }
+
+                                            if is_done {
+                                                finished = true;
+                                                if is_cancelled_now {
+                                                    // 取消完成后直接隐藏对话框
+                                                    let _ = d.hide();
+                                                }
+                                                // 非取消情况下（成功/失败），对话框保持显示
+                                                // 让用户看到最终状态文字（如"应用更新失败"）
+                                            }
+                                        } else {
+                                            finished = true;
+                                        }
+
+                                        if finished {
+                                            if let Ok(mut t) = timer_clone.try_borrow_mut() {
+                                                *t = None;
+                                            }
+                                        }
+                                    });
+                                    
+                                    // 3. 在新线程中执行下载及解压
+                                    let progress_state_thread = progress_state.clone();
+                                    let is_cancelled_thread = is_cancelled.clone();
+                                    std::thread::spawn(move || {
+                                        let rt2 = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+                                        rt2.block_on(async move {
+                                            let extract_dir = std::env::temp_dir().join("screenhop_update");
+                                            let _ = std::fs::remove_dir_all(&extract_dir); // 清理旧缓存
+                                            std::fs::create_dir_all(&extract_dir).unwrap();
+                                            
+                                            log::info!("开始下载并解压到: {:?}", extract_dir);
+                                            
+                                            // 定义进度回调
+                                            let progress_state_cb = progress_state_thread.clone();
+                                            let progress_cb = move |downloaded: u64, total: u64| {
+                                                let pct = if total > 0 { downloaded as f32 / total as f32 } else { 0.0 };
+                                                let mb_downloaded = downloaded as f32 / 1024.0 / 1024.0;
+                                                let mb_total = total as f32 / 1024.0 / 1024.0;
+                                                
+                                                let text = format!("正在下载: {:.1} MB / {:.1} MB", mb_downloaded, mb_total);
+                                                let mut state = progress_state_cb.lock().unwrap();
+                                                state.0 = pct;
+                                                state.1 = text;
+                                            };
+                                            
+                                            // 执行下载和解压
+                                            let dl_res = screenhop_core::updater::download_and_extract(
+                                                &download_url,
+                                                &extract_dir,
+                                                proxy_url_clone2.as_deref(),
+                                                proxy_username_clone2.as_deref(),
+                                                proxy_password_clone2.as_deref(),
+                                                progress_cb
+                                            ).await;
+                                            
+                                            if is_cancelled_thread.load(Ordering::SeqCst) {
+                                                log::info!("用户已取消更新");
+                                                let mut state = progress_state_thread.lock().unwrap();
+                                                state.3 = true; // finish
+                                                return;
+                                            }
+                                            
+                                            match dl_res {
+                                                Ok(_) => {
+                                                    // 4. 下载解压成功，执行应用替换逻辑
+                                                    {
+                                                        let mut state = progress_state_thread.lock().unwrap();
+                                                        state.1 = "正在安装更新并重启...".to_string();
+                                                        state.0 = 1.0;
+                                                        state.2 = false;
+                                                    }
+                                                    
+                                                    // 应用更新
+                                                    #[cfg(target_os = "macos")]
+                                                    let apply_res = screenhop_core::updater::apply_update_macos(&extract_dir);
+                                                    
+                                                    #[cfg(target_os = "windows")]
+                                                    let apply_res = screenhop_core::updater::apply_update_windows(&extract_dir);
+                                                    
+                                                    if let Err(e) = apply_res {
+                                                        log::error!("应用更新失败: {:?}", e);
+                                                        let mut state = progress_state_thread.lock().unwrap();
+                                                        state.1 = format!("应用更新失败: {}", e);
+                                                        state.2 = true;
+                                                        state.3 = true;
+                                                    } else {
+                                                        log::info!("更新应用成功，准备退出当前进程");
+                                                        std::process::exit(0);
+                                                    }
+                                                },
+                                                Err(e) => {
+                                                    log::error!("下载解压失败: {:?}", e);
+                                                    let mut state = progress_state_thread.lock().unwrap();
+                                                    state.1 = format!("下载失败: {}", e);
+                                                    state.2 = true;
+                                                    state.3 = true;
+                                                }
+                                            }
+                                        });
+                                    });
+                                }
+                            }).unwrap();
                         } else {
-                            if let Err(e) = open::that(&result.release_url) {
-                                log::error!("打开浏览器失败: {}", e);
-                            }
+                            log::error!("未找到可用的下载链接");
                         }
                     } else {
                         log::info!("当前已是最新版本 ({})", result.current_version);
@@ -110,6 +285,7 @@ fn do_check_update(
 struct MenuItems {
     toggle_item: MenuItem,
     autostart_item: MenuItem,
+    auto_check_update_item: MenuItem,
     proxy_enable_item: MenuItem,
 }
 
@@ -144,6 +320,16 @@ pub fn run_app(config: AppConfig) -> Result<()> {
         None,
     );
     let update_item = MenuItem::with_id(MENU_ID_CHECK_UPDATE, "检查更新", true, None);
+    let auto_check_update_item = MenuItem::with_id(
+        MENU_ID_AUTO_CHECK_UPDATE,
+        if config.lock().unwrap().auto_check_update {
+            "✓ 启动时检查更新"
+        } else {
+            "  启动时检查更新"
+        },
+        true,
+        None,
+    );
     
     let proxy_menu = muda::Submenu::new("代理设置", true);
     let proxy_enable_item = MenuItem::with_id(
@@ -176,6 +362,7 @@ pub fn run_app(config: AppConfig) -> Result<()> {
     menu.append(&toggle_item).ok();
     menu.append(&autostart_item).ok();
     menu.append(&update_item).ok();
+    menu.append(&auto_check_update_item).ok();
     menu.append(&proxy_menu).ok();
     menu.append(&PredefinedMenuItem::separator()).ok();
     menu.append(&quit_item).ok();
@@ -208,6 +395,7 @@ pub fn run_app(config: AppConfig) -> Result<()> {
     let menu_items = MenuItems {
         toggle_item,
         autostart_item,
+        auto_check_update_item,
         proxy_enable_item,
     };
     let config_clone = config.clone();
@@ -321,6 +509,23 @@ fn handle_menu_event(id: &str, items: &MenuItems, config: &Arc<Mutex<AppConfig>>
             };
             do_check_update(env!("CARGO_PKG_VERSION"), proxy_url, proxy_username, proxy_password, true);
         }
+        MENU_ID_AUTO_CHECK_UPDATE => {
+            if let Ok(mut cfg) = config.lock() {
+                cfg.auto_check_update = !cfg.auto_check_update;
+                log::info!("启动时检查更新: {}", cfg.auto_check_update);
+
+                let text = if cfg.auto_check_update {
+                    "✓ 启动时检查更新"
+                } else {
+                    "  启动时检查更新"
+                };
+                items.auto_check_update_item.set_text(text);
+
+                if let Err(e) = cfg.save() {
+                    log::error!("保存配置失败: {}", e);
+                }
+            }
+        }
         MENU_ID_PROXY_ENABLE => {
             if let Ok(mut cfg) = config.lock() {
                 if cfg.proxy_enabled {
@@ -330,16 +535,17 @@ fn handle_menu_event(id: &str, items: &MenuItems, config: &Arc<Mutex<AppConfig>>
                     if let Err(e) = cfg.save() {
                         log::error!("保存配置失败: {}", e);
                     }
-                } else if !cfg.proxy_url.is_empty() {
+                } else {
+                    if cfg.proxy_url.is_empty() {
+                        cfg.proxy_url = "socks5://127.0.0.1:2888".to_string();
+                        log::info!("未配置代理地址，自动填充为默认: {}", cfg.proxy_url);
+                    }
                     cfg.proxy_enabled = true;
                     log::info!("代理已启用");
                     items.proxy_enable_item.set_text("✓ 启用代理");
                     if let Err(e) = cfg.save() {
                         log::error!("保存配置失败: {}", e);
                     }
-                } else {
-                    // URL 未配置，提示打开设置
-                    log::info!("请先在代理设置中配置代理地址");
                 }
             }
         }
@@ -375,6 +581,9 @@ fn handle_menu_event(id: &str, items: &MenuItems, config: &Arc<Mutex<AppConfig>>
             }
             
             let dialog = crate::slint_ui::ProxyAuthDialog::new().unwrap();
+            
+            #[cfg(target_os = "windows")]
+            dialog.set_text_font("Microsoft YaHei".into());
             
             dialog.set_address(address.into());
             dialog.set_port(port.into());
