@@ -7,11 +7,10 @@ edition.workspace = true
 screenhop-core = { path = "../core" }
 log.workspace = true
 anyhow.workspace = true
+[target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { workspace = true }
 objc2-foundation = { workspace = true }
 objc2-app-kit = { workspace = true }
-
-[target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.24"
 core-foundation = "0.10"
 cocoa = "0.26"

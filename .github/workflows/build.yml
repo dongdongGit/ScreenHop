@@ -83,8 +83,17 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Build release
-        run: cargo build --release --target ${{ matrix.target }}
+      - name: Install cargo-bundle
+        run: cargo install cargo-bundle
+
+      - name: Build .app bundle
+        working-directory: crates/app
+        run: cargo bundle --release --target ${{ matrix.target }}
+
+      - name: Ad-hoc code sign
+        run: |
+          codesign --force --deep --sign - \
+            target/${{ matrix.target }}/release/bundle/osx/ScreenHop.app
 
       - name: Get version
         id: get_version
@@ -99,8 +108,8 @@ jobs:
       - name: Create ZIP archive
         run: |
           VERSION="${{ steps.get_version.outputs.version }}"
-          zip -j "ScreenHop-${{ matrix.arch }}-$VERSION.zip" \
-            "target/${{ matrix.target }}/release/screenhop"
+          cd target/${{ matrix.target }}/release/bundle/osx
+          zip -r "$GITHUB_WORKSPACE/ScreenHop-${{ matrix.arch }}-$VERSION.zip" ScreenHop.app
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -108,23 +117,43 @@ jobs:
           name: macos-${{ matrix.arch }}
           path: ScreenHop-*.zip
 
-  # 创建 macOS Universal Binary
+  # 创建 macOS Universal .app Bundle
   build-macos-universal:
     runs-on: macos-latest
     needs: build-macos
 
     steps:
-      - name: Download arm64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: macos-macOS-arm64
-          path: arm64
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Download x86_64 artifact
-        uses: actions/download-artifact@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          name: macos-macOS-x86_64
-          path: x86_64
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Install cargo-bundle
+        run: cargo install cargo-bundle
+
+      - name: Build arm64 release
+        working-directory: crates/app
+        run: cargo bundle --release --target aarch64-apple-darwin
+
+      - name: Build x86_64 release
+        working-directory: crates/app
+        run: cargo bundle --release --target x86_64-apple-darwin
+
+      - name: Create Universal .app with lipo
+        run: |
+          # 复制 arm64 .app 作为基础
+          cp -R target/aarch64-apple-darwin/release/bundle/osx/ScreenHop.app \
+               target/ScreenHop-universal.app
+          # 用 lipo 替换内部二进制为 Universal
+          lipo -create \
+            target/aarch64-apple-darwin/release/bundle/osx/ScreenHop.app/Contents/MacOS/screenhop \
+            target/x86_64-apple-darwin/release/bundle/osx/ScreenHop.app/Contents/MacOS/screenhop \
+            -output target/ScreenHop-universal.app/Contents/MacOS/screenhop
+          # Ad-hoc 签名
+          codesign --force --deep --sign - target/ScreenHop-universal.app
 
       - name: Get version
         id: get_version
@@ -136,28 +165,11 @@ jobs:
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Checkout for fresh build
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-
-      - name: Build universal binary
-        run: |
-          cargo build --release --target aarch64-apple-darwin
-          cargo build --release --target x86_64-apple-darwin
-          mkdir -p universal
-          lipo -create \
-            target/aarch64-apple-darwin/release/screenhop \
-            target/x86_64-apple-darwin/release/screenhop \
-            -output universal/screenhop
-
       - name: Create ZIP archive
         run: |
           VERSION="${{ steps.get_version.outputs.version }}"
-          zip -j "ScreenHop-macOS-universal-$VERSION.zip" universal/screenhop
+          cd target
+          zip -r "$GITHUB_WORKSPACE/ScreenHop-macOS-universal-$VERSION.zip" ScreenHop-universal.app
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
