@@ -120,7 +120,6 @@ jobs:
   # 创建 macOS Universal .app Bundle
   build-macos-universal:
     runs-on: macos-latest
-    needs: build-macos
 
     steps:
       - name: Checkout code
