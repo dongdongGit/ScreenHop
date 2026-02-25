@@ -5,6 +5,7 @@ use crate::{WindowHandle, WindowManager};
 use super::WinWindowHandle;
 
 use windows::Win32::Foundation::{HWND, RECT};
+use windows::Win32::Foundation::POINT as WINPOINT;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 /// Windows 窗口管理器（基于 Win32 API）
@@ -19,12 +20,12 @@ impl WinWindowManager {
 impl WindowManager for WinWindowManager {
     fn get_window_at(&self, point: Point) -> Option<WindowHandle> {
         unsafe {
-            let pt = POINT {
+            let pt = WINPOINT {
                 x: point.x as i32,
                 y: point.y as i32,
             };
             let hwnd = WindowFromPoint(pt);
-            if hwnd.0 == std::ptr::null_mut() {
+            if hwnd.0 == 0 {
                 return None;
             }
 
@@ -32,21 +33,21 @@ impl WindowManager for WinWindowManager {
             let mut top = hwnd;
             loop {
                 let parent = GetAncestor(top, GA_ROOT);
-                if parent.0 == std::ptr::null_mut() || parent == top {
+                if parent.0 == 0 || parent == top {
                     break;
                 }
                 top = parent;
             }
 
             Some(WindowHandle {
-                inner: WinWindowHandle { hwnd: top.0 as isize },
+                inner: WinWindowHandle { hwnd: top.0 },
             })
         }
     }
 
     fn get_window_frame(&self, handle: &WindowHandle) -> Option<Rect> {
         unsafe {
-            let hwnd = HWND(handle.inner.hwnd as *mut _);
+            let hwnd = HWND(handle.inner.hwnd);
             let mut rect = RECT::default();
             if GetWindowRect(hwnd, &mut rect).is_ok() {
                 Some(Rect::new(
@@ -63,7 +64,7 @@ impl WindowManager for WinWindowManager {
 
     fn set_window_position(&self, handle: &WindowHandle, pos: Point) -> Result<()> {
         unsafe {
-            let hwnd = HWND(handle.inner.hwnd as *mut _);
+            let hwnd = HWND(handle.inner.hwnd);
             let _ = SetWindowPos(
                 hwnd,
                 HWND_TOP,
@@ -79,7 +80,7 @@ impl WindowManager for WinWindowManager {
 
     fn set_window_size(&self, handle: &WindowHandle, width: f64, height: f64) -> Result<()> {
         unsafe {
-            let hwnd = HWND(handle.inner.hwnd as *mut _);
+            let hwnd = HWND(handle.inner.hwnd);
             let mut rect = RECT::default();
             let _ = GetWindowRect(hwnd, &mut rect);
             let _ = SetWindowPos(
@@ -97,7 +98,7 @@ impl WindowManager for WinWindowManager {
 
     fn activate_window(&self, handle: &WindowHandle) -> Result<()> {
         unsafe {
-            let hwnd = HWND(handle.inner.hwnd as *mut _);
+            let hwnd = HWND(handle.inner.hwnd);
             let _ = SetForegroundWindow(hwnd);
         }
         Ok(())
@@ -105,14 +106,14 @@ impl WindowManager for WinWindowManager {
 
     fn is_maximized(&self, handle: &WindowHandle) -> bool {
         unsafe {
-            let hwnd = HWND(handle.inner.hwnd as *mut _);
+            let hwnd = HWND(handle.inner.hwnd);
             IsZoomed(hwnd).as_bool()
         }
     }
 
     fn restore_window(&self, handle: &WindowHandle) -> Result<()> {
         unsafe {
-            let hwnd = HWND(handle.inner.hwnd as *mut _);
+            let hwnd = HWND(handle.inner.hwnd);
             let _ = ShowWindow(hwnd, SW_RESTORE);
         }
         Ok(())
@@ -120,7 +121,7 @@ impl WindowManager for WinWindowManager {
 
     fn maximize_window(&self, handle: &WindowHandle) -> Result<()> {
         unsafe {
-            let hwnd = HWND(handle.inner.hwnd as *mut _);
+            let hwnd = HWND(handle.inner.hwnd);
             let _ = ShowWindow(hwnd, SW_MAXIMIZE);
         }
         Ok(())
