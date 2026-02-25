@@ -6,10 +6,12 @@ slint::slint! {
         width: 460px;
         min-height: 340px;
         always-on-top: true;
+        default-font-family: root.text_font;
 
         callback apply(string, string, string, bool, string, string);
         callback cancel();
 
+        in-out property <string> text_font: "";
         in-out property <string> address: "127.0.0.1";
         in-out property <string> port: "7890";
         in-out property <string> protocol: "SOCKS5";
@@ -53,11 +55,11 @@ slint::slint! {
 
             GroupBox {
                 title: "Authentication";
-                
+
                 GridLayout {
                     spacing: 8px;
                     padding: 4px;
-                    
+
                     Row {
                         CheckBox {
                             text: "Enable";
@@ -66,7 +68,7 @@ slint::slint! {
                             colspan: 2;
                         }
                     }
-                    
+
                     Row {
                         Text { text: "Username:"; vertical-alignment: center; }
                         LineEdit {
@@ -75,7 +77,7 @@ slint::slint! {
                             edited(txt) => { root.username = txt; }
                         }
                     }
-                    
+
                     Row {
                         Text { text: "Password:"; vertical-alignment: center; }
                         LineEdit {
@@ -93,6 +95,56 @@ slint::slint! {
                 spacing: 8px;
                 Button { text: "Cancel"; clicked => { root.cancel(); } }
                 Button { text: "Save"; primary: true; clicked => { root.apply(root.address, root.port, root.protocol, root.auth_enabled, root.username, root.password); } }
+            }
+        }
+    }
+
+    export component UpdateProgressDialog inherits Window {
+        title: "ScreenHop 更新";
+        width: 360px;
+        min-height: 140px;
+        always-on-top: true;
+        default-font-family: root.text_font;
+
+        callback cancel();
+
+        in-out property <string> text_font: "";
+        in-out property <string> status_text: "正在下载...";
+        in-out property <float> progress: 0.0;
+        in-out property <bool> can_cancel: true;
+
+        VerticalBox {
+            padding: 16px;
+            spacing: 12px;
+
+            Text {
+                text: root.status_text;
+                font-size: 14px;
+                wrap: word-wrap;
+            }
+
+            Rectangle {
+                height: 12px;
+                border-radius: 6px;
+                background: #e0e0e0;
+
+                Rectangle {
+                    x: 0;
+                    y: 0;
+                    height: 100%;
+                    width: parent.width * root.progress;
+                    background: #007aff;
+                    border-radius: 6px;
+                }
+            }
+
+            HorizontalBox {
+                alignment: end;
+                Button {
+                    text: "取消";
+                    enabled: root.can_cancel;
+                    clicked => { root.cancel(); }
+                }
             }
         }
     }
