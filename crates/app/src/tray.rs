@@ -465,6 +465,9 @@ fn handle_menu_event(id: &str, items: &MenuItems, config: &Arc<Mutex<AppConfig>>
                 };
                 items.toggle_item.set_text(text);
 
+                // 实时启用/禁用钩子（无需重启）
+                crate::engine::set_hook_enabled(!cfg.disable_hook);
+
                 if let Err(e) = cfg.save() {
                     log::error!("保存配置失败: {}", e);
                 }

@@ -2,27 +2,39 @@ use anyhow::Result;
 use screenhop_core::config::AppConfig;
 use screenhop_core::monitor;
 use screenhop_core::Point;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// 全局标志：钩子是否处于启用状态（true = 处理事件，false = 放行所有事件）
+static HOOK_ENABLED: AtomicBool = AtomicBool::new(true);
+
+/// 动态启用或禁用鼠标中键移动功能
+/// 在托盘菜单切换时调用，无需重新安装钩子
+pub fn set_hook_enabled(enabled: bool) {
+    HOOK_ENABLED.store(enabled, Ordering::SeqCst);
+    log::info!(
+        "鼠标中键移动功能已{}",
+        if enabled { "启用" } else { "禁用" }
+    );
+}
 
 /// 安装鼠标中键钩子，注册事件处理逻辑
 pub fn install_hook(config: &AppConfig) -> Result<()> {
+    // 根据配置初始化全局启用状态
+    HOOK_ENABLED.store(!config.disable_hook, Ordering::SeqCst);
     let title_bar_height = config.title_bar_height;
 
     #[cfg(target_os = "macos")]
     {
         use screenhop_platform::macos::hook::MacMouseHook;
         let mut hook = MacMouseHook::new();
-        hook.install_event_tap(move |event| {
-            handle_middle_click(event.point, title_bar_height)
-        })?;
+        hook.install_event_tap(move |event| handle_middle_click(event.point, title_bar_height))?;
     }
 
     #[cfg(target_os = "windows")]
     {
         use screenhop_platform::windows::hook::WinMouseHook;
         let mut hook = WinMouseHook::new();
-        hook.install_hook(move |event| {
-            handle_middle_click(event.point, title_bar_height)
-        })?;
+        hook.install_hook(move |event| handle_middle_click(event.point, title_bar_height))?;
     }
 
     log::info!("鼠标中键移动引擎已启动");
@@ -32,6 +44,10 @@ pub fn install_hook(config: &AppConfig) -> Result<()> {
 /// 处理中键点击事件
 /// 返回 true 表示事件已消费（窗口已移动），返回 false 表示放行事件
 fn handle_middle_click(point: Point, title_bar_height: f64) -> bool {
+    // 如果功能已被用户禁用，直接放行事件
+    if !HOOK_ENABLED.load(Ordering::SeqCst) {
+        return false;
+    }
     #[cfg(target_os = "windows")]
     let _ = title_bar_height; // Windows uses WM_NCHITTEST instead of height
     use screenhop_platform::{HitTester, MonitorManager, WindowManager};
@@ -52,7 +68,11 @@ fn handle_middle_click(point: Point, title_bar_height: f64) -> bool {
         use screenhop_platform::windows::{
             hittest::WinHitTester, monitor::WinMonitorManager, window::WinWindowManager,
         };
-        (WinWindowManager::new(), WinMonitorManager::new(), WinHitTester::new())
+        (
+            WinWindowManager::new(),
+            WinMonitorManager::new(),
+            WinHitTester::new(),
+        )
     };
 
     // 1. 获取点击位置的窗口
