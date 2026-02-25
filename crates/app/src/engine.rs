@@ -32,6 +32,8 @@ pub fn install_hook(config: &AppConfig) -> Result<()> {
 /// 处理中键点击事件
 /// 返回 true 表示事件已消费（窗口已移动），返回 false 表示放行事件
 fn handle_middle_click(point: Point, title_bar_height: f64) -> bool {
+    #[cfg(target_os = "windows")]
+    let _ = title_bar_height; // Windows uses WM_NCHITTEST instead of height
     use screenhop_platform::{HitTester, MonitorManager, WindowManager};
 
     // 根据平台创建对应实现

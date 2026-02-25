@@ -8,6 +8,7 @@ use anyhow::{Context, Result};
 use std::net::TcpListener;
 use screenhop_core::config::AppConfig;
 
+#[allow(dead_code)]
 const APP_ID: &str = "com.dongdong.screenhop";
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 

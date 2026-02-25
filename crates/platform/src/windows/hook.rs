@@ -17,6 +17,7 @@ pub struct WinMouseHook {
 static mut GLOBAL_CALLBACK: Option<Box<dyn Fn(MouseEvent) -> bool + Send>> = None;
 static mut HOOK_HANDLE: Option<HHOOK> = None;
 
+#[allow(static_mut_refs)]
 impl WinMouseHook {
     pub fn new() -> Self {
         Self {
