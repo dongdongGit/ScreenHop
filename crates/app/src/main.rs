@@ -1,4 +1,5 @@
 #![allow(unexpected_cfgs)]
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 mod engine;
 mod slint_ui;
