@@ -1,15 +1,21 @@
 use anyhow::Result;
 use screenhop_core::{Point, Rect};
 
-use crate::{WindowHandle, WindowManager};
 use super::WinWindowHandle;
+use crate::{WindowHandle, WindowManager};
 
-use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Foundation::POINT as WINPOINT;
+use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 /// Windows 窗口管理器（基于 Win32 API）
 pub struct WinWindowManager;
+
+impl Default for WinWindowManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl WinWindowManager {
     pub fn new() -> Self {
@@ -40,7 +46,9 @@ impl WindowManager for WinWindowManager {
             }
 
             Some(WindowHandle {
-                inner: WinWindowHandle { hwnd: top.0 as isize },
+                inner: WinWindowHandle {
+                    hwnd: top.0 as isize,
+                },
             })
         }
     }
@@ -72,7 +80,7 @@ impl WindowManager for WinWindowManager {
                 pos.y as i32,
                 0,
                 0,
-                SWP_NOSIZE | SWP_NOZORDER | SWP_SHOWWINDOW,
+                SWP_NOSIZE | SWP_SHOWWINDOW,
             );
         }
         Ok(())
@@ -90,7 +98,7 @@ impl WindowManager for WinWindowManager {
                 rect.top,
                 width as i32,
                 height as i32,
-                SWP_NOMOVE | SWP_NOZORDER | SWP_SHOWWINDOW,
+                SWP_NOMOVE | SWP_SHOWWINDOW,
             );
         }
         Ok(())
@@ -99,6 +107,7 @@ impl WindowManager for WinWindowManager {
     fn activate_window(&self, handle: &WindowHandle) -> Result<()> {
         unsafe {
             let hwnd = HWND(handle.inner.hwnd as *mut _);
+            let _ = BringWindowToTop(hwnd);
             let _ = SetForegroundWindow(hwnd);
         }
         Ok(())

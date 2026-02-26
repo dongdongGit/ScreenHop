@@ -146,15 +146,17 @@ fn handle_middle_click(point: Point, title_bar_height: f64) -> bool {
         new_pos.y,
     );
 
-    // 8. Windows: 如果窗口是最大化的，先还原
+    // 8. Windows: 如果窗口是最大化的，先还原并记录状态
     #[cfg(target_os = "windows")]
-    {
-        if wm.is_maximized(&handle) {
+    let was_maximized = {
+        let is_max = wm.is_maximized(&handle);
+        if is_max {
             if let Err(e) = wm.restore_window(&handle) {
                 log::error!("还原窗口失败: {}", e);
             }
         }
-    }
+        is_max
+    };
 
     // 9. 设置新位置和尺寸
     if let Err(e) = wm.set_window_position(&handle, new_pos) {
@@ -166,6 +168,16 @@ fn handle_middle_click(point: Point, title_bar_height: f64) -> bool {
     if (new_width - frame.width).abs() > 1.0 || (new_height - frame.height).abs() > 1.0 {
         if let Err(e) = wm.set_window_size(&handle, new_width, new_height) {
             log::error!("设置窗口尺寸失败: {}", e);
+        }
+    }
+
+    // 新增：如果移动前是最大化状态，移动后恢复最大化
+    #[cfg(target_os = "windows")]
+    {
+        if was_maximized {
+            if let Err(e) = wm.maximize_window(&handle) {
+                log::error!("恢复窗口最大化失败: {}", e);
+            }
         }
     }
 

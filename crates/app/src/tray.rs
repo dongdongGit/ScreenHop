@@ -55,28 +55,42 @@ fn do_check_update(
                             result.latest_version
                         );
                         
-                        let mut should_update = false;
-                        
-                        // 1. 询问用户是否立即更新
                         #[cfg(target_os = "macos")]
-                        {
+                        let should_update = {
+                            let mut flag = false;
                             let script = format!(
                                 "display dialog \"发现新版本: {} \\n是否立即下载并安装？\" with title \"ScreenHop 更新\" buttons {{\"稍后\", \"立即更新\"}} default button 2",
                                 result.latest_version
                             );
                             if let Ok(out) = std::process::Command::new("osascript").arg("-e").arg(&script).output() {
                                 if String::from_utf8_lossy(&out.stdout).contains("立即更新") {
-                                    should_update = true;
+                                    flag = true;
                                 }
                             }
-                        }
+                            flag
+                        };
                         
                         #[cfg(target_os = "windows")]
-                        {
-                            // 简单的弹窗或直接下载，暂时对 Windows 可以默认 true （在实际发布时需要加 Win32 MessageBox）
-                            // 为了简化，此处先用控制台输出 + 直接更新，或者可以加上 msg 指令
-                            should_update = true;
-                        }
+                        let should_update = {
+                            use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONINFORMATION, MB_OKCANCEL, IDOK};
+                            use windows::core::{HSTRING, PCWSTR};
+                            
+                            let text = format!("发现新版本: {}\n是否立即下载并安装？", result.latest_version);
+                            let title = "ScreenHop 更新";
+                            
+                            let h_text = HSTRING::from(text);
+                            let h_title = HSTRING::from(title);
+                            
+                            unsafe {
+                                MessageBoxW(
+                                    None,
+                                    PCWSTR(h_text.as_ptr()),
+                                    PCWSTR(h_title.as_ptr()),
+                                    MB_ICONINFORMATION | MB_OKCANCEL,
+                                ) == IDOK
+                            }
+                        };
+
 
                         if !should_update {
                             log::info!("用户取消了更新");
@@ -258,6 +272,27 @@ fn do_check_update(
                                     result.current_version
                                 );
                                 let _ = std::process::Command::new("osascript").arg("-e").arg(&script).output();
+                            }
+                            
+                            #[cfg(target_os = "windows")]
+                            {
+                                use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONINFORMATION, MB_OK};
+                                use windows::core::{HSTRING, PCWSTR};
+                                
+                                let text = format!("当前已是最新版本 ({})", result.current_version);
+                                let title = "ScreenHop 更新";
+                                
+                                let h_text = HSTRING::from(text);
+                                let h_title = HSTRING::from(title);
+                                
+                                unsafe {
+                                    MessageBoxW(
+                                        None,
+                                        PCWSTR(h_text.as_ptr()),
+                                        PCWSTR(h_title.as_ptr()),
+                                        MB_ICONINFORMATION | MB_OK,
+                                    );
+                                }
                             }
                         }
                     }

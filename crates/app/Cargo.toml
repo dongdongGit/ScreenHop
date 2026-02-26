@@ -33,3 +33,9 @@ icon = ["../../assets/ScreenHop.icns"]
 version = "1.0.0"
 copyright = "Copyright © dongdong"
 short_description = "A window moving tool"
+
+[target.'cfg(target_os = "windows")'.build-dependencies]
+embed-resource = "2.4"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62.2", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }

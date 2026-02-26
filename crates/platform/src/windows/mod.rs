@@ -19,6 +19,12 @@ pub struct WinPlatform {
     pub auto_start: autostart::WinAutoStart,
 }
 
+impl Default for WinPlatform {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WinPlatform {
     pub fn new() -> Self {
         Self {

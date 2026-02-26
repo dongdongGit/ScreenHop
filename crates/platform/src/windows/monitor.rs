@@ -8,6 +8,12 @@ use windows::Win32::Graphics::Gdi::*;
 /// Windows 显示器管理器（基于 EnumDisplayMonitors）
 pub struct WinMonitorManager;
 
+impl Default for WinMonitorManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WinMonitorManager {
     pub fn new() -> Self {
         Self

@@ -6,6 +6,12 @@ use crate::AutoStart;
 /// Windows 自启动管理器（基于 schtasks）
 pub struct WinAutoStart;
 
+impl Default for WinAutoStart {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WinAutoStart {
     pub fn new() -> Self {
         Self

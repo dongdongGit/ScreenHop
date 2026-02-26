@@ -5,8 +5,8 @@ mod slint_ui;
 mod tray;
 
 use anyhow::{Context, Result};
-use std::net::TcpListener;
 use screenhop_core::config::AppConfig;
+use std::net::TcpListener;
 
 #[allow(dead_code)]
 const APP_ID: &str = "com.dongdong.screenhop";
@@ -46,7 +46,7 @@ fn inner_main() -> Result<()> {
             log::warn!("缺少辅助功能权限，正在触发系统授权提示...");
             // 触发 macOS 系统权限请求对话框
             platform.request_accessibility_permissions();
-            
+
             // 为了防止系统自带弹窗没弹出来（macOS 经常吞弹窗），加上我们自己的弹窗引导
             let script = r#"
                 display alert "ScreenHop 需要「辅助功能」权限" message "ScreenHop 需要该权限来监听鼠标中键移动窗口。\n\n请在随后的系统设置中，找到并勾选 ScreenHop。" buttons {"前往授权", "稍后"} default button 1
@@ -63,7 +63,10 @@ fn inner_main() -> Result<()> {
                     end tell
                 end if
             "#;
-            let _ = std::process::Command::new("osascript").arg("-e").arg(script).output();
+            let _ = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(script)
+                .output();
 
             // 权限不足时跳过钩子安装，但继续运行展示托盘图标
             log::warn!("已跳过鼠标钩子安装（缺少权限），请授权后重启 ScreenHop");
@@ -95,8 +98,13 @@ fn inner_main() -> Result<()> {
 }
 
 fn main() {
-    // 初始化日志到文件，方便 Finder 启动时调试
-    let log_file = std::fs::File::create("/tmp/screenhop_run.log").unwrap();
+    // 获取系统的临时目录
+    let temp_dir = std::env::temp_dir();
+    let run_log_path = temp_dir.join("screenhop_run.log");
+    let err_log_path = temp_dir.join("screenhop_fatal_err.log");
+
+    // 初始化日志到文件，方便 Finder 启动时或隐藏执行时调试
+    let log_file = std::fs::File::create(&run_log_path).unwrap();
     let target = Box::new(log_file);
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
@@ -107,6 +115,6 @@ fn main() {
 
     if let Err(e) = inner_main() {
         log::error!("致命错误导致应用退出: {:?}", e);
-        std::fs::write("/tmp/screenhop_fatal_err.log", format!("{:?}", e)).ok();
+        std::fs::write(&err_log_path, format!("{:?}", e)).ok();
     }
 }

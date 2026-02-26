@@ -11,6 +11,12 @@ const HTCAPTION: i32 = 2;
 /// Windows 命中检测器（基于 WM_NCHITTEST + UI Automation）
 pub struct WinHitTester;
 
+impl Default for WinHitTester {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WinHitTester {
     pub fn new() -> Self {
         Self
