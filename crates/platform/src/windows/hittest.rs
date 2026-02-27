@@ -33,14 +33,29 @@ impl HitTester for WinHitTester {
             let x = (point.x as i32) as u16 as u32;
             let y = (point.y as i32) as u16 as u32;
             let lparam = LPARAM(((y << 16) | x) as isize);
-            let result = SendMessageW(
-                hwnd,
-                WM_NCHITTEST,
-                WPARAM(0),
-                lparam,
-            );
+            let result = SendMessageW(hwnd, WM_NCHITTEST, WPARAM(0), lparam);
 
-            result.0 as i32 == HTCAPTION
+            if result.0 as i32 == HTCAPTION {
+                return true;
+            }
+
+            // Fallback for modern windows like Windows 11 File Explorer (CabinetWClass)
+            // that return HTCLIENT for their custom title bars
+            let mut class_name = [0u16; 256];
+            let len = GetClassNameW(hwnd, &mut class_name);
+            let class = String::from_utf16_lossy(&class_name[..len as usize]);
+
+            if class == "CabinetWClass" {
+                let mut rect = windows::Win32::Foundation::RECT::default();
+                if GetWindowRect(hwnd, &mut rect).is_ok() {
+                    let top_margin = 60; // Approximated title bar height for WinUI 3 tabs
+                    if point.y >= rect.top as f64 && point.y <= (rect.top + top_margin) as f64 {
+                        return true;
+                    }
+                }
+            }
+
+            false
         }
     }
 

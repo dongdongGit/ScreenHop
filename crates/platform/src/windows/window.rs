@@ -107,6 +107,27 @@ impl WindowManager for WinWindowManager {
     fn activate_window(&self, handle: &WindowHandle) -> Result<()> {
         unsafe {
             let hwnd = HWND(handle.inner.hwnd as *mut _);
+
+            // 为了在不具备前台权限时将窗口置顶，先将其设置为最顶层窗口，再取消最顶层，这能强制其Z-order位于其他普通窗口之上
+            let _ = SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+            );
+            let _ = SetWindowPos(
+                hwnd,
+                HWND_NOTOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+            );
+
             let _ = BringWindowToTop(hwnd);
             let _ = SetForegroundWindow(hwnd);
         }
