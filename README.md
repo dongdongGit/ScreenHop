@@ -5,7 +5,7 @@
 # ScreenHop
 
 **一键跨屏，窗口无缝穿梭**<br>
-利用鼠标中键点击标题栏，让窗口瞬间跳转到下一个显示器！
+⚡️ 高性能、跨平台的显示器窗口快速移动工具。基于 Rust 构建，支持 macOS 和 Windows。只需鼠标中键点击标题栏，即可在多显示器间瞬间“传送”你的工作窗口，让多屏工作流丝滑流畅。 
 
 [![Rust](https://img.shields.io/badge/built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
