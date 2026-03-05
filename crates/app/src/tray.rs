@@ -144,7 +144,7 @@ fn do_check_update(
                                         let mut finished = false;
                                         let is_cancelled_now = is_cancelled_timer.load(Ordering::SeqCst);
 
-                                        if let Some(d) = d_weak_timer.upgrade() {
+                                        match d_weak_timer.upgrade() { Some(d) => {
                                             let (pct, text, can_cancel, is_done) = {
                                                 let state = progress_state_timer.lock().unwrap();
                                                 (state.0, state.1.clone(), state.2, state.3)
@@ -166,9 +166,9 @@ fn do_check_update(
                                                 // 非取消情况下（成功/失败），对话框保持显示
                                                 // 让用户看到最终状态文字（如"应用更新失败"）
                                             }
-                                        } else {
+                                        } _ => {
                                             finished = true;
-                                        }
+                                        }}
 
                                         if finished {
                                             if let Ok(mut t) = timer_clone.try_borrow_mut() {
@@ -536,15 +536,15 @@ fn handle_menu_event(id: &str, items: &MenuItems, config: &Arc<Mutex<AppConfig>>
         }
         MENU_ID_CHECK_UPDATE => {
             log::info!("手动检查更新...");
-            let (proxy_url, proxy_username, proxy_password) = if let Ok(cfg) = config.lock() {
+            let (proxy_url, proxy_username, proxy_password) = match config.lock() { Ok(cfg) => {
                 if cfg.proxy_enabled && !cfg.proxy_url.is_empty() {
                     (Some(cfg.proxy_url.clone()), cfg.proxy_username.clone(), cfg.proxy_password.clone())
                 } else {
                     (None, None, None)
                 }
-            } else {
+            } _ => {
                 (None, None, None)
-            };
+            }};
             do_check_update(env!("CARGO_PKG_VERSION"), proxy_url, proxy_username, proxy_password, true);
         }
         MENU_ID_AUTO_CHECK_UPDATE => {
