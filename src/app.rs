@@ -1,7 +1,7 @@
 use anyhow::Result;
-use screenhop_core::config::AppConfig;
-use screenhop_core::monitor;
-use screenhop_core::Point;
+use screenhop::config::AppConfig;
+use screenhop::monitor;
+use screenhop_platform::Point;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// 全局标志：钩子是否处于启用状态（true = 处理事件，false = 放行所有事件）

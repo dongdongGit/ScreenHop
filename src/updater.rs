@@ -65,12 +65,54 @@ fn find_matching_asset(assets: &[GithubAsset]) -> Option<&GithubAsset> {
 }
 
 /// 检查是否有新版本
+/// 
+/// - `mock_version`: 若提供，跳过网络请求，直接伪造「发现此版本」用于本地测试
+/// - `mock_download_url`: 配合 mock_version 使用，伪造的下载链接（可指向本地 zip 或真实 URL）
 pub async fn check_for_update(
     current_version: &str,
     proxy_url: Option<&str>,
     proxy_username: Option<&str>,
     proxy_password: Option<&str>,
 ) -> Result<UpdateCheckResult> {
+    check_for_update_inner(current_version, proxy_url, proxy_username, proxy_password, None, None).await
+}
+
+/// 带 mock 参数的版本，供本地测试在线更新流程使用
+pub async fn check_for_update_with_mock(
+    current_version: &str,
+    proxy_url: Option<&str>,
+    proxy_username: Option<&str>,
+    proxy_password: Option<&str>,
+    mock_version: Option<&str>,
+    mock_download_url: Option<&str>,
+) -> Result<UpdateCheckResult> {
+    check_for_update_inner(current_version, proxy_url, proxy_username, proxy_password, mock_version, mock_download_url).await
+}
+
+async fn check_for_update_inner(
+    current_version: &str,
+    proxy_url: Option<&str>,
+    proxy_username: Option<&str>,
+    proxy_password: Option<&str>,
+    mock_version: Option<&str>,
+    mock_download_url: Option<&str>,
+) -> Result<UpdateCheckResult> {
+    // ── Mock 模式：跳过网络请求，直接返回伪造的更新结果（用于本地测试更新流程）──
+    if let Some(mock_ver) = mock_version {
+        log::warn!("[mock模式] 使用测试版本: {} (当前: {})", mock_ver, current_version);
+        let has_update = mock_ver != current_version;
+        return Ok(UpdateCheckResult {
+            has_update,
+            latest_version: mock_ver.to_string(),
+            current_version: current_version.to_string(),
+            release_url: RELEASES_PAGE_URL.to_string(),
+            download_url: mock_download_url.map(|s| s.to_string()),
+            asset_name: mock_download_url.map(|u| u.split('/').last().unwrap_or("update.zip").to_string()),
+            asset_size: 0,
+            error_message: None,
+        });
+    }
+
     let mut result = UpdateCheckResult {
         has_update: false,
         latest_version: String::new(),
@@ -295,17 +337,76 @@ rm "$0"
     Ok(())
 }
 
-/// Windows: 在解压目录中找到 .exe 并启动（安装程序或便携版）
+/// Windows: 将解压目录中的新版 exe 通过 PowerShell 守护脚本替换当前进程
+///
+/// 原理：与 macOS 的 bash 守护脚本相同——
+///   1. 写一个 .ps1 脚本到 %TEMP%
+///   2. 脚本等待当前进程 PID 退出
+///   3. 用 Move-Item 替换旧 exe
+///   4. 启动新 exe
+///   5. 自删除脚本
+///   6. 后台启动此脚本后立即返回，让调用方 exit(0)
 #[cfg(target_os = "windows")]
 pub fn apply_update_windows(extract_dir: &std::path::Path) -> Result<()> {
-    // 递归查找第一个 .exe
-    let exe_path = find_exe_in_dir(extract_dir).context("解压目录中未找到 .exe 文件")?;
-    log::info!("找到更新程序: {:?}", exe_path);
+    // 递归查找新版 exe
+    let new_exe = find_exe_in_dir(extract_dir).context("解压目录中未找到 .exe 文件")?;
+    log::info!("找到新版程序: {:?}", new_exe);
 
-    std::process::Command::new(&exe_path)
+    // 获取当前 exe 路径（即将被替换的目标）
+    let current_exe = std::env::current_exe().context("获取当前程序路径失败")?;
+    log::info!("当前程序路径: {:?}", current_exe);
+
+    let current_pid = std::process::id();
+
+    // 构造 PowerShell 守护脚本
+    // 等待当前进程退出 → 替换 exe → 重启 → 自删除
+    let script_content = format!(
+        r#"
+# Wait for old process to exit
+try {{ Wait-Process -Id {pid} -ErrorAction SilentlyContinue }} catch {{}}
+Start-Sleep -Milliseconds 500
+
+# Replace exe (retry up to 5 times in case of brief file lock)
+$retries = 5
+for ($i = 0; $i -lt $retries; $i++) {{
+    try {{
+        Move-Item -Path '{new_exe}' -Destination '{old_exe}' -Force
+        break
+    }} catch {{
+        Start-Sleep -Milliseconds 500
+    }}
+}}
+
+# Launch new version
+Start-Process -FilePath '{old_exe}'
+
+# Self-delete this script
+Remove-Item -Path $MyInvocation.MyCommand.Path -Force
+"#,
+        pid = current_pid,
+        new_exe = new_exe.display(),
+        old_exe = current_exe.display(),
+    );
+
+    let script_path = std::env::temp_dir()
+        .join(format!("screenhop_updater_{}.ps1", current_pid));
+
+    // 写入 UTF-8 BOM，确保 PowerShell 5.1 在所有 Windows 系统上正确识别编码
+    let mut bom_content = vec![0xEF_u8, 0xBB, 0xBF]; // UTF-8 BOM
+    bom_content.extend_from_slice(script_content.as_bytes());
+    std::fs::write(&script_path, &bom_content).context("写入更新脚本失败")?;
+    log::info!("更新脚本已写入: {:?}", script_path);
+
+
+    // 后台启动 PowerShell 执行脚本（-WindowStyle Hidden 隐藏窗口）
+    std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden",
+               "-ExecutionPolicy", "Bypass",
+               "-File", script_path.to_str().unwrap_or_default()])
         .spawn()
-        .context("启动更新程序失败")?;
+        .context("启动后台更新脚本失败")?;
 
+    log::info!("后台更新脚本已启动（PID={}），等待当前进程退出后自动替换", current_pid);
     Ok(())
 }
 
@@ -406,5 +507,96 @@ mod tests {
             "[成功] 当前版本: {}, 最新版本: {}, 有更新: {}",
             info.current_version, info.latest_version, info.has_update
         );
+    }
+
+    /// 验证 Windows 平台下 PowerShell 更新替换及重启脚本的可行性与正确性
+    #[tokio::test]
+    #[cfg(target_os = "windows")]
+    async fn test_update_script_execution() {
+        use std::process::Command;
+        use std::fs;
+        
+        let temp_dir = std::env::temp_dir().join("screenhop_test_update_script");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+        
+        // 1. 准备旧版与新版虚拟 exe 文件
+        // Windows 系统里内置有 C:\Windows\System32\cmd.exe，我们将其复制作为测试目标
+        let old_exe = temp_dir.join("old_dummy.exe");
+        let new_exe = temp_dir.join("new_dummy.exe");
+        fs::copy("C:\\Windows\\System32\\cmd.exe", &old_exe).unwrap();
+        fs::copy("C:\\Windows\\System32\\cmd.exe", &new_exe).unwrap();
+        
+        // 2. 启动一个虚拟的"旧进程"，使其运行一段时间以便 PowerShell 脚本等待它退出
+        let mut child = Command::new(&old_exe)
+            .args(["/c", "start-sleep -s 2"])
+            .spawn()
+            .unwrap();
+        let dummy_pid = child.id();
+        
+        // 3. 构建类似于 apply_update_windows 中的 PowerShell 脚本内容
+        // 脚本工作：等待进程退出 -> 覆盖文件 -> 自动拉起新版 exe 并写入一个标记成功的文件
+        let verify_file = temp_dir.join("success.txt");
+        let script_content = format!(
+            r#"
+# 等待虚拟旧进程退出
+try {{ Wait-Process -Id {pid} -ErrorAction SilentlyContinue }} catch {{}}
+Start-Sleep -Milliseconds 200
+
+# 覆盖旧文件
+$retries = 5
+for ($i = 0; $i -lt $retries; $i++) {{
+    try {{
+        Move-Item -Path '{new_exe}' -Destination '{old_exe}' -Force
+        break
+    }} catch {{
+        Start-Sleep -Milliseconds 200
+    }}
+}}
+
+# 重新自动启动已更新的程序，命令其生成 success.txt 以供断言
+Start-Process -FilePath '{old_exe}' -ArgumentList '/c', 'echo success > "{verify_file}"'
+
+# 脚本自删除
+Remove-Item -Path $MyInvocation.MyCommand.Path -Force
+"#,
+            pid = dummy_pid,
+            new_exe = new_exe.display().to_string().replace('\\', "\\\\"),
+            old_exe = old_exe.display().to_string().replace('\\', "\\\\"),
+            verify_file = verify_file.display().to_string().replace('\\', "\\\\"),
+        );
+        
+        let script_path = temp_dir.join("test_updater.ps1");
+        let mut bom_content = vec![0xEF_u8, 0xBB, 0xBF];
+        bom_content.extend_from_slice(script_content.as_bytes());
+        fs::write(&script_path, &bom_content).unwrap();
+        
+        // 4. 后台静默启动此 PowerShell 脚本
+        Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden",
+                   "-ExecutionPolicy", "Bypass",
+                   "-File", script_path.to_str().unwrap()])
+            .spawn()
+            .unwrap();
+            
+        // 5. 主动关闭该虚拟旧进程，触发 PowerShell 脚本开始工作
+        let _ = child.kill();
+        
+        // 6. 轮询检测 success.txt 文件是否被自动运行的新程序生成（超时设为 5 秒）
+        let start_time = std::time::Instant::now();
+        let mut success = false;
+        while start_time.elapsed().as_secs() < 5 {
+            if verify_file.exists() {
+                success = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        
+        // 清理临时文件目录
+        let _ = fs::remove_dir_all(&temp_dir);
+        
+        // 断言：脚本确实自动拉起了新进程并运行成功
+        assert!(success, "PowerShell 更新脚本未能成功拉起被更新的程序！");
     }
 }

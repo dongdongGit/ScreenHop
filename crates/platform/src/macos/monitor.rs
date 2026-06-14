@@ -1,7 +1,6 @@
 #![allow(deprecated)] // cocoa crate fields are deprecated in favor of objc2-foundation
 
-use screenhop_core::MonitorInfo;
-use screenhop_core::Rect;
+use crate::{MonitorInfo, Point, Rect};
 
 use crate::{MonitorManager, WindowHandle};
 
@@ -72,13 +71,15 @@ impl MonitorManager for MacMonitorManager {
         use crate::WindowManager;
         let wm = super::window::MacWindowManager::new();
         let frame = wm.get_window_frame(handle)?;
-        let center = screenhop_core::Point {
+        let center = Point {
             x: frame.mid_x(),
             y: frame.mid_y(),
         };
 
         let monitors = self.get_monitors();
-        screenhop_core::monitor::find_monitor_for_point(center, &monitors)
+        monitors
+            .iter()
+            .position(|m| m.bounds.contains(center))
             .map(|idx| monitors[idx].clone())
     }
 }

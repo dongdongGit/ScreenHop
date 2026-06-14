@@ -1,31 +1,88 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/platform", "crates/app"]
+members = ["crates/platform", "."]
 
 [workspace.package]
-version = "1.0.7"
+version = "1.1.0"
 edition = "2021"
 authors = ["EcoRoundDev"]
 license = "MIT"
 repository = "https://github.com/EcoRoundDev/ScreenHop"
 
+[package]
+name = "screenhop"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "screenhop"
+path = "src/main.rs"
+
+[dependencies]
+# 平台抽象层
+screenhop-platform = { path = "crates/platform" }
+
+# 日志
+log = "0.4"
+env_logger = "0.11"
+
+# 错误处理 & 序列化
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+
+# 更新检查
+semver = "1.0"
+reqwest = { version = "0.12", features = ["json", "stream", "socks"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "fs", "io-util"] }
+serde_json = "1.0"
+zip = "2"
+futures-util = "0.3"
+
+# 配置目录
+dirs = "6.0"
+
+# 系统托盘 & UI
+tray-icon = "0.21.3"
+muda = "0.17.1"
+open = "5"
+tao = "0.34.5"
+slint = "1.15.1"
+image = "0.24"
+imageproc = "0.26.0"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.26"
+objc = "0.2"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62.2", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }
+
+[target.'cfg(target_os = "windows")'.build-dependencies]
+embed-resource = "2.4"
+
+[package.metadata.bundle]
+name = "ScreenHop"
+identifier = "com.dongdong.screenhop"
+icon = ["assets/ScreenHop.icns"]
+version = "1.0.0"
+copyright = "Copyright © dongdong"
+short_description = "A window moving tool"
+
 [workspace.dependencies]
-# 共享依赖版本
+# 共享依赖版本（供 platform crate 引用）
 objc2 = "0.5"
 objc2-foundation = { version = "0.2", features = ["NSString", "NSArray"] }
 objc2-app-kit = { version = "0.2", features = ["NSAccessibility", "NSEvent"] }
 log = "0.4"
-env_logger = "0.11"
 anyhow = "1.0"
-serde = { version = "1.0", features = ["derive"] }
-toml = "0.8"
-semver = "1.0"
-reqwest = { version = "0.12", features = ["json", "stream", "socks"] }
-tokio = { version = "1", features = ["rt", "macros"] }
 
 [profile.release]
 opt-level = "z"   # "z" 优先优化二进制体积大小（如果更看重极致 CPU 计算性能，可改为 3）
 lto = true        # 开启链接时优化 (Link Time Optimization)，全局移除未使用的代码
 codegen-units = 1 # 将所有的代码作为一个单元编译，牺牲编译时间换取最深度的优化
-panic = "abort"   # 桌面应用通常不需要捕获和展开 panic 堆栈，直接 abort 可以显著减小体积
+# panic = "abort" 已移除：需要保留 unwind 机制以使 std::panic::set_hook 捕获崩溃日志
 strip = true      # 剥离二进制文件中的调试符号 (macOS/Linux 下极大地减小文件大小)

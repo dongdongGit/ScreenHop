@@ -78,11 +78,9 @@ cd ScreenHop
 cargo install cargo-bundle
 
 # 编译并打包（以 Apple Silicon 为例）
-cd crates/app
 cargo bundle --release --target aarch64-apple-darwin
 
 # Ad-hoc 签名（允许在本机运行）
-cd ../..
 codesign --force --deep --sign - \
   target/aarch64-apple-darwin/release/bundle/osx/ScreenHop.app
 ```
@@ -101,12 +99,10 @@ cargo build --release --target x86_64-pc-windows-msvc
 ScreenHop 将核心逻辑与各具体平台的系统 API 调用进行了分离，方便未来扩展和维护：
 
 ```text
-crates/
-├── core/       => 跨平台共享核心（配置读写、显示器几何数学计算、版本更新调度）
-├── platform/   => OS 系统接口抽象与具体实现
-│   ├── macos/    -> 使用 CGEventTap 拦截鼠标，AXUIElement 移动缩放窗口
-│   └── windows/  -> 使用 WH_MOUSE_LL 全局钩子，Win32 API 操作窗口句柄
-└── app/        => 主程序入口、系统托盘菜单（tray-icon）、应用状态管理
+ScreenHop/
+├── src/        => 主程序入口、托盘菜单（tray-icon）、配置读写、显示器几何计算、版本更新调度与 Slint UI 设置界面
+└── crates/
+    └── platform/ => OS 系统接口抽象与具体实现（macOS CGEventTap/AXUIElement 和 Windows WH_MOUSE_LL/Win32）
 ```
 
 ## 🤝 鸣谢与参与

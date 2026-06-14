@@ -1,4 +1,4 @@
-use crate::{MonitorInfo, Point, Rect};
+use screenhop_platform::{MonitorInfo, Point, Rect};
 
 /// 计算窗口从当前显示器移动到目标显示器后的新位置
 ///

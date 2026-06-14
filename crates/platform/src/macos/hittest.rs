@@ -1,4 +1,4 @@
-use screenhop_core::Point;
+use crate::{Point, Rect};
 
 use crate::{HitTester, WindowHandle};
 
@@ -128,7 +128,7 @@ impl HitTester for MacHitTester {
         let wm = super::window::MacWindowManager::new();
 
         if let Some(frame) = wm.get_window_frame(handle) {
-            screenhop_core::monitor::is_in_title_bar(point, &frame, self.title_bar_height)
+            is_in_title_bar(point, &frame, self.title_bar_height)
         } else {
             false
         }
@@ -143,4 +143,12 @@ impl HitTester for MacHitTester {
             false
         }
     }
+}
+
+/// 判断给定点是否在标题栏区域内
+fn is_in_title_bar(point: Point, window_frame: &Rect, title_bar_height: f64) -> bool {
+    point.x >= window_frame.min_x()
+        && point.x <= window_frame.max_x()
+        && point.y >= window_frame.min_y()
+        && point.y <= window_frame.min_y() + title_bar_height
 }

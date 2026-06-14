@@ -88,7 +88,6 @@ jobs:
         run: cargo install cargo-bundle
 
       - name: Build .app bundle
-        working-directory: crates/app
         run: cargo bundle --release --target ${{ matrix.target }}
 
       - name: Ad-hoc code sign

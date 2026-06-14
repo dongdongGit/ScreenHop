@@ -1,5 +1,5 @@
 use anyhow::Result;
-use screenhop_core::{Point, Rect};
+use crate::{Point, Rect};
 
 use super::WinWindowHandle;
 use crate::{WindowHandle, WindowManager};

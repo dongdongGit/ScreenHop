@@ -5539,47 +5539,37 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "screenhop"
-version = "1.0.7"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "cocoa",
+ "dirs",
  "embed-resource",
  "env_logger",
+ "futures-util",
  "image 0.24.9",
  "imageproc",
  "log",
  "muda",
  "objc",
  "open",
- "screenhop-core",
- "screenhop-platform",
- "slint",
- "tao",
- "tokio",
- "tray-icon",
- "windows 0.62.2",
-]
-
-[[package]]
-name = "screenhop-core"
-version = "1.0.7"
-dependencies = [
- "anyhow",
- "dirs",
- "futures-util",
- "log",
  "reqwest",
+ "screenhop-platform",
  "semver",
  "serde",
  "serde_json",
+ "slint",
+ "tao",
  "tokio",
  "toml 0.8.2",
+ "tray-icon",
+ "windows 0.62.2",
  "zip",
 ]
 
 [[package]]
 name = "screenhop-platform"
-version = "1.0.7"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "cocoa",
@@ -5590,7 +5580,6 @@ dependencies = [
  "objc2 0.5.2",
  "objc2-app-kit 0.2.2",
  "objc2-foundation 0.2.2",
- "screenhop-core",
  "windows 0.58.0",
 ]
 

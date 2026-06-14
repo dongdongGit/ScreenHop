@@ -1,4 +1,4 @@
-use screenhop_core::{MonitorInfo, Rect};
+use crate::{MonitorInfo, Point, Rect};
 
 use crate::{MonitorManager, WindowHandle, WindowManager};
 
@@ -35,13 +35,15 @@ impl MonitorManager for WinMonitorManager {
     fn get_monitor_for_window(&self, handle: &WindowHandle) -> Option<MonitorInfo> {
         let wm = super::window::WinWindowManager::new();
         let frame = wm.get_window_frame(handle)?;
-        let center = screenhop_core::Point {
+        let center = Point {
             x: frame.mid_x(),
             y: frame.mid_y(),
         };
 
         let monitors = self.get_monitors();
-        screenhop_core::monitor::find_monitor_for_point(center, &monitors)
+        monitors
+            .iter()
+            .position(|m| m.bounds.contains(center))
             .map(|idx| monitors[idx].clone())
     }
 }

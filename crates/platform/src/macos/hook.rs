@@ -5,7 +5,7 @@ use std::sync::{
 };
 
 use crate::MouseEvent;
-use screenhop_core::Point;
+use crate::Point;
 
 /// macOS 鼠标钩子实现（基于 CGEventTap）
 ///

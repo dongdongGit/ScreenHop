@@ -1,7 +1,7 @@
 #![allow(deprecated)]
 
 use anyhow::Result;
-use screenhop_core::{Point, Rect};
+use crate::{Point, Rect};
 
 use crate::{WindowHandle, WindowManager};
 use super::MacWindowHandle;

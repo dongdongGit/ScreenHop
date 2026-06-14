@@ -1,12 +1,12 @@
 #![allow(unexpected_cfgs)]
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
-mod engine;
+mod app;
 mod slint_ui;
 mod tray;
 
 use anyhow::{Context, Result};
-use screenhop_core::config::AppConfig;
+use screenhop::config::AppConfig;
 use std::net::TcpListener;
 
 #[allow(dead_code)]
@@ -74,7 +74,7 @@ fn inner_main() -> Result<()> {
         } else {
             // 安装鼠标中键事件钩子
             if !config.disable_hook {
-                engine::install_hook(&config)?;
+                app::install_hook(&config)?;
             }
         }
 
@@ -87,7 +87,7 @@ fn inner_main() -> Result<()> {
     {
         // 安装鼠标中键事件钩子
         if !config.disable_hook {
-            engine::install_hook(&config)?;
+            app::install_hook(&config)?;
         }
 
         // 启动系统托盘 + Windows 消息循环（阻塞）
@@ -113,6 +113,26 @@ fn main() {
         .init();
 
     log::info!("ScreenHop v{} 启动中...", APP_VERSION);
+
+    // 注册 panic hook：捕获任意线程的 panic 并写入错误日志
+    // 在 Windows 无控制台模式下，这是唯一能感知后台崩溃的途径
+    let err_log_path_clone = err_log_path.clone();
+    std::panic::set_hook(Box::new(move |info| {
+        let location = info.location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown".to_string());
+        let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            (*s).to_string()
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "unknown panic payload".to_string()
+        };
+        let msg = format!("[PANIC] at {}: {}", location, payload);
+        log::error!("{}", msg);
+        // 同时写入独立的错误文件，方便排查
+        let _ = std::fs::write(&err_log_path_clone, &msg);
+    }));
 
     if let Err(e) = inner_main() {
         log::error!("致命错误导致应用退出: {:?}", e);

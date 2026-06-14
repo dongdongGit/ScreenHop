@@ -1,4 +1,4 @@
-use screenhop_core::Point;
+use crate::Point;
 
 use crate::{HitTester, WindowHandle};
 

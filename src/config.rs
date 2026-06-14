@@ -41,6 +41,18 @@ pub struct AppConfig {
     /// 代理密码（可选）
     #[serde(default)]
     pub proxy_password: Option<String>,
+
+    // ── 本地更新测试（仅开发调试使用） ──
+
+    /// 模拟"发现新版本"的版本号（如 "999.0.0"）
+    /// 设置后跳过 GitHub API 请求，直接触发更新弹窗，用于本地测试完整更新流程
+    #[serde(default)]
+    pub test_update_version: Option<String>,
+
+    /// 模拟下载链接（与 test_update_version 配合使用）
+    /// 可填写本地 http server 地址或已发布版本的 zip 直链
+    #[serde(default)]
+    pub test_update_url: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -63,6 +75,8 @@ impl Default for AppConfig {
             proxy_url: String::new(),
             proxy_username: None,
             proxy_password: None,
+            test_update_version: None,
+            test_update_url: None,
         }
     }
 }

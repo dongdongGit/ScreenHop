@@ -2,7 +2,7 @@ use anyhow::Result;
 use slint::ComponentHandle;
 use muda::{Menu, MenuItem, PredefinedMenuItem};
 use tray_icon::{menu::MenuEvent, Icon, TrayIconBuilder};
-use screenhop_core::config::AppConfig;
+use screenhop::config::AppConfig;
 
 use std::sync::{Arc, Mutex};
 
@@ -17,9 +17,9 @@ const MENU_ID_QUIT: &str = "quit";
 /// 创建托盘图标（使用真实的 png）
 fn create_tray_icon_image() -> Icon {
     #[cfg(target_os = "macos")]
-    let icon_data = include_bytes!("../../../assets/icon-mac-tray.png");
+    let icon_data = include_bytes!("../assets/icon-mac-tray.png");
     #[cfg(not(target_os = "macos"))]
-    let icon_data = include_bytes!("../../../assets/icon-32.png");
+    let icon_data = include_bytes!("../assets/icon-32.png");
 
     let image = image::load_from_memory(icon_data)
         .expect("无法加载托盘图标数据")
@@ -38,6 +38,8 @@ fn do_check_update(
     proxy_username: Option<String>,
     proxy_password: Option<String>,
     manual: bool,
+    mock_version: Option<String>,
+    mock_url: Option<String>,
 ) {
     let version_str = version.to_string();
     std::thread::spawn(move || {
@@ -46,7 +48,14 @@ fn do_check_update(
             .build()
             .unwrap();
         rt.block_on(async {
-            match screenhop_core::updater::check_for_update(&version_str, proxy_url.as_deref(), proxy_username.as_deref(), proxy_password.as_deref()).await {
+            match screenhop::updater::check_for_update_with_mock(
+                &version_str,
+                proxy_url.as_deref(),
+                proxy_username.as_deref(),
+                proxy_password.as_deref(),
+                mock_version.as_deref(),
+                mock_url.as_deref(),
+            ).await {
                 Ok(result) => {
                     if result.has_update {
                         log::info!(
@@ -55,42 +64,10 @@ fn do_check_update(
                             result.latest_version
                         );
                         
-                        #[cfg(target_os = "macos")]
-                        let should_update = {
-                            let mut flag = false;
-                            let script = format!(
-                                "display dialog \"发现新版本: {} \\n是否立即下载并安装？\" with title \"ScreenHop 更新\" buttons {{\"稍后\", \"立即更新\"}} default button 2",
-                                result.latest_version
-                            );
-                            if let Ok(out) = std::process::Command::new("osascript").arg("-e").arg(&script).output() {
-                                if String::from_utf8_lossy(&out.stdout).contains("立即更新") {
-                                    flag = true;
-                                }
-                            }
-                            flag
-                        };
-                        
-                        #[cfg(target_os = "windows")]
-                        let should_update = {
-                            use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONINFORMATION, MB_OKCANCEL, IDOK};
-                            use windows::core::{HSTRING, PCWSTR};
-                            
-                            let text = format!("发现新版本: {}\n是否立即下载并安装？", result.latest_version);
-                            let title = "ScreenHop 更新";
-                            
-                            let h_text = HSTRING::from(text);
-                            let h_title = HSTRING::from(title);
-                            
-                            unsafe {
-                                MessageBoxW(
-                                    None,
-                                    PCWSTR(h_text.as_ptr()),
-                                    PCWSTR(h_title.as_ptr()),
-                                    MB_ICONINFORMATION | MB_OKCANCEL,
-                                ) == IDOK
-                            }
-                        };
-
+                        let should_update = screenhop::confirm!(
+                            "ScreenHop 更新",
+                            &format!("发现新版本: {} \n是否立即下载并安装？", result.latest_version)
+                        );
 
                         if !should_update {
                             log::info!("用户取消了更新");
@@ -203,7 +180,7 @@ fn do_check_update(
                                             };
                                             
                                             // 执行下载和解压
-                                            let dl_res = screenhop_core::updater::download_and_extract(
+                                            let dl_res = screenhop::updater::download_and_extract(
                                                 &download_url,
                                                 &extract_dir,
                                                 proxy_url_clone2.as_deref(),
@@ -231,10 +208,10 @@ fn do_check_update(
                                                     
                                                     // 应用更新
                                                     #[cfg(target_os = "macos")]
-                                                    let apply_res = screenhop_core::updater::apply_update_macos(&extract_dir);
+                                                    let apply_res = screenhop::updater::apply_update_macos(&extract_dir);
                                                     
                                                     #[cfg(target_os = "windows")]
-                                                    let apply_res = screenhop_core::updater::apply_update_windows(&extract_dir);
+                                                    let apply_res = screenhop::updater::apply_update_windows(&extract_dir);
                                                     
                                                     if let Err(e) = apply_res {
                                                         log::error!("应用更新失败: {:?}", e);
@@ -265,49 +242,20 @@ fn do_check_update(
                     } else {
                         log::info!("当前已是最新版本 ({})", result.current_version);
                         if manual {
-                            #[cfg(target_os = "macos")]
-                            {
-                                let script = format!(
-                                    "display dialog \"当前已是最新版本 ({})\" with title \"ScreenHop 更新\" buttons {{\"确定\"}} default button 1",
-                                    result.current_version
-                                );
-                                let _ = std::process::Command::new("osascript").arg("-e").arg(&script).output();
-                            }
-                            
-                            #[cfg(target_os = "windows")]
-                            {
-                                use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONINFORMATION, MB_OK};
-                                use windows::core::{HSTRING, PCWSTR};
-                                
-                                let text = format!("当前已是最新版本 ({})", result.current_version);
-                                let title = "ScreenHop 更新";
-                                
-                                let h_text = HSTRING::from(text);
-                                let h_title = HSTRING::from(title);
-                                
-                                unsafe {
-                                    MessageBoxW(
-                                        None,
-                                        PCWSTR(h_text.as_ptr()),
-                                        PCWSTR(h_title.as_ptr()),
-                                        MB_ICONINFORMATION | MB_OK,
-                                    );
-                                }
-                            }
+                            screenhop::alert!(
+                                "ScreenHop 更新",
+                                &format!("当前已是最新版本 ({})", result.current_version)
+                            );
                         }
                     }
                 }
                 Err(e) => {
                     log::error!("检查更新失败: {}", e);
                     if manual {
-                        #[cfg(target_os = "macos")]
-                        {
-                            let script = format!(
-                                "display dialog \"检查更新失败: {}\" with title \"ScreenHop 更新\" buttons {{\"确定\"}} default button 1 with icon stop",
-                                e
-                            );
-                            let _ = std::process::Command::new("osascript").arg("-e").arg(&script).output();
-                        }
+                        screenhop::alert_error!(
+                            "ScreenHop 更新",
+                            &format!("检查更新失败: {}", e)
+                        );
                     }
                 }
             }
@@ -413,18 +361,28 @@ pub fn run_app(config: AppConfig) -> Result<()> {
     log::info!("系统托盘图标已创建");
 
     // 启动时自动检查更新
+    // - 若 auto_check_update 启用，走正常流程
+    // - 若配置了 test_update_version（mock 测试模式），无论 auto_check_update 如何都强制触发
     {
         let cfg = config.lock().unwrap();
-        if cfg.auto_check_update {
-            log::info!("启动时自动检查更新...");
+        let has_mock = cfg.test_update_version.is_some();
+        if cfg.auto_check_update || has_mock {
+            if has_mock {
+                log::warn!("[mock模式] 检测到 test_update_version，强制触发更新检查...");
+            } else {
+                log::info!("启动时自动检查更新...");
+            }
             let (proxy_url, proxy_username, proxy_password) = if cfg.proxy_enabled && !cfg.proxy_url.is_empty() {
                 (Some(cfg.proxy_url.clone()), cfg.proxy_username.clone(), cfg.proxy_password.clone())
             } else {
                 (None, None, None)
             };
-            do_check_update(env!("CARGO_PKG_VERSION"), proxy_url, proxy_username, proxy_password, false);
+            let mock_version = cfg.test_update_version.clone();
+            let mock_url = cfg.test_update_url.clone();
+            do_check_update(env!("CARGO_PKG_VERSION"), proxy_url, proxy_username, proxy_password, false, mock_version, mock_url);
         }
     }
+
 
     // 在主线程处理 Slint 和 MenuEvents
     let menu_items = MenuItems {
@@ -454,7 +412,7 @@ pub fn run_app(config: AppConfig) -> Result<()> {
                 let _: () = msg_send![app, setActivationPolicy: 1i64]; // Accessory
                 
                 // Set the application icon
-                let icon_bytes = include_bytes!("../../../assets/icon-256.png");
+                let icon_bytes = include_bytes!("../assets/icon-256.png");
                 let data = cocoa::foundation::NSData::dataWithBytes_length_(
                     cocoa::base::nil,
                     icon_bytes.as_ptr() as *const std::ffi::c_void,
@@ -501,7 +459,7 @@ fn handle_menu_event(id: &str, items: &MenuItems, config: &Arc<Mutex<AppConfig>>
                 items.toggle_item.set_text(text);
 
                 // 实时启用/禁用钩子（无需重启）
-                crate::engine::set_hook_enabled(!cfg.disable_hook);
+                crate::app::set_hook_enabled(!cfg.disable_hook);
 
                 if let Err(e) = cfg.save() {
                     log::error!("保存配置失败: {}", e);
@@ -529,23 +487,39 @@ fn handle_menu_event(id: &str, items: &MenuItems, config: &Arc<Mutex<AppConfig>>
                     }
                 }
 
+                #[cfg(target_os = "windows")]
+                {
+                    use screenhop_platform::AutoStart;
+                    let auto = screenhop_platform::windows::autostart::WinAutoStart::new();
+                    if let Err(e) = auto.set_enabled(cfg.auto_start) {
+                        log::error!("设置自启动失败: {:?}", e);
+                        // 弹窗告知用户失败原因
+                        screenhop::alert_error!("ScreenHop", &format!("设置开机自启动失败:\n{}", e));
+                        // 回滚菜单状态
+                        cfg.auto_start = !cfg.auto_start;
+                        items.autostart_item.set_text(if cfg.auto_start { "✓ 开机自动启动" } else { "  开机自动启动" });
+                    }
+                }
+
                 if let Err(e) = cfg.save() {
                     log::error!("保存配置失败: {}", e);
                 }
             }
         }
+
         MENU_ID_CHECK_UPDATE => {
             log::info!("手动检查更新...");
-            let (proxy_url, proxy_username, proxy_password) = match config.lock() { Ok(cfg) => {
-                if cfg.proxy_enabled && !cfg.proxy_url.is_empty() {
+            let (proxy_url, proxy_username, proxy_password, mock_version, mock_url) = match config.lock() { Ok(cfg) => {
+                let proxy = if cfg.proxy_enabled && !cfg.proxy_url.is_empty() {
                     (Some(cfg.proxy_url.clone()), cfg.proxy_username.clone(), cfg.proxy_password.clone())
                 } else {
                     (None, None, None)
-                }
+                };
+                (proxy.0, proxy.1, proxy.2, cfg.test_update_version.clone(), cfg.test_update_url.clone())
             } _ => {
-                (None, None, None)
+                (None, None, None, None, None)
             }};
-            do_check_update(env!("CARGO_PKG_VERSION"), proxy_url, proxy_username, proxy_password, true);
+            do_check_update(env!("CARGO_PKG_VERSION"), proxy_url, proxy_username, proxy_password, true, mock_version, mock_url);
         }
         MENU_ID_AUTO_CHECK_UPDATE => {
             if let Ok(mut cfg) = config.lock() {
