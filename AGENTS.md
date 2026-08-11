@@ -1,11 +1,39 @@
-# ScreenHop Agent
+# ScreenHop Agent 指南
+
+适用范围：仓库根目录及所有子目录。
+
+<!-- codebase-memory-mcp:start -->
+## Codebase Knowledge Graph (codebase-memory-mcp)
+
+本项目使用 `codebase-memory-mcp` 维护代码库知识图谱。做代码发现时，始终优先使用 MCP 图谱工具，再考虑 `rg`、`find` 等文本搜索。
+
+### 优先级
+
+1. `search_graph`：按模式查找函数、类、路由、变量。
+2. `trace_path`：追踪函数的调用方或被调用方。
+3. `get_code_snippet`：读取指定函数或类的源码片段。
+4. `query_graph`：用 Cypher 查询复杂关系。
+5. `get_architecture`：获取项目高层架构摘要。
+
+### 何时降级到文本搜索
+
+- 搜索字符串字面量、错误信息或配置值。
+- 搜索非代码文件，例如 Dockerfile、shell 脚本和配置文件。
+- MCP 图谱结果不足以回答问题。
+
+### 示例
+
+- 查找 handler：`search_graph(name_pattern=".*OrderHandler.*")`
+- 追踪调用方：`trace_path(function_name="OrderHandler", direction="inbound")`
+- 读取源码：`get_code_snippet(qualified_name="pkg/orders.OrderHandler")`
+<!-- codebase-memory-mcp:end -->
 
 ## 项目概述
 
 **ScreenHop** 是一个跨平台桌面应用（macOS & Windows），通过鼠标中键点击实现窗口在多显示器之间的快速移动。使用 Rust 构建，追求高性能。
 
 - **仓库**: https://github.com/EcoRoundDev/ScreenHop
-- **版本**: 1.1.0
+- **版本**: 1.1.1
 - **许可证**: MIT
 
 ## 架构
