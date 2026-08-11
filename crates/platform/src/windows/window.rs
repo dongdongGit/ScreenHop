@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::{Point, Rect};
+use anyhow::Result;
 
 use super::WinWindowHandle;
 use crate::{WindowHandle, WindowManager};

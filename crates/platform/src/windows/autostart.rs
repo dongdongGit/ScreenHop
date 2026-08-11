@@ -3,7 +3,10 @@ use std::{
     env,
     ffi::OsString,
     fs,
-    os::windows::{ffi::{OsStrExt, OsStringExt}, process::CommandExt},
+    os::windows::{
+        ffi::{OsStrExt, OsStringExt},
+        process::CommandExt,
+    },
     process::Command,
 };
 use windows::core::{w, PCWSTR, PWSTR};
@@ -72,8 +75,7 @@ impl AutoStart for WinAutoStart {
 
         if enabled {
             if is_admin {
-                let _ = reg_disable(); // To avoid conflicts, if reg is enabled, disable it first.
-
+                let _ = reg_disable();
                 let path_str = std::env::current_exe()?.to_string_lossy().to_string();
                 create_scheduled_task(TASK_NAME, &path_str)?;
                 log::info!("已在计划任务中启用开机自启（管理员模式）");

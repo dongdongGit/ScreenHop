@@ -10,8 +10,8 @@ macro_rules! alert {
     ($title:expr, $msg:expr) => {{
         #[cfg(target_os = "windows")]
         {
-            use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONINFORMATION, MB_OK};
             use windows::core::{HSTRING, PCWSTR};
+            use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONINFORMATION, MB_OK};
             let h_text = HSTRING::from($msg);
             let h_title = HSTRING::from($title);
             unsafe {

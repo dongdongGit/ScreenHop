@@ -91,11 +91,23 @@ mod tests {
             Some(0)
         );
         assert_eq!(
-            find_monitor_for_point(Point { x: 2000.0, y: 500.0 }, &monitors),
+            find_monitor_for_point(
+                Point {
+                    x: 2000.0,
+                    y: 500.0
+                },
+                &monitors
+            ),
             Some(1)
         );
         assert_eq!(
-            find_monitor_for_point(Point { x: -100.0, y: 500.0 }, &monitors),
+            find_monitor_for_point(
+                Point {
+                    x: -100.0,
+                    y: 500.0
+                },
+                &monitors
+            ),
             None
         );
     }

@@ -1,9 +1,8 @@
-pub mod hook;
-pub mod window;
-pub mod monitor;
-pub mod hittest;
 pub mod autostart;
-
+pub mod hittest;
+pub mod hook;
+pub mod monitor;
+pub mod window;
 
 /// macOS 平台窗口句柄（AXUIElement 的包装）
 #[derive(Debug, Clone)]
@@ -61,7 +60,8 @@ impl MacPlatform {
             let options = CFDictionary::from_CFType_pairs(&[(key.as_CFType(), value.as_CFType())]);
 
             extern "C" {
-                fn AXIsProcessTrustedWithOptions(options: core_foundation::base::CFTypeRef) -> bool;
+                fn AXIsProcessTrustedWithOptions(options: core_foundation::base::CFTypeRef)
+                    -> bool;
             }
 
             // 调用时传入 Prompt=true，macOS 会自动弹出授权引导对话框

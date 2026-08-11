@@ -1,10 +1,10 @@
 #![allow(deprecated)]
 
-use anyhow::Result;
 use crate::{Point, Rect};
+use anyhow::Result;
 
-use crate::{WindowHandle, WindowManager};
 use super::MacWindowHandle;
+use crate::{WindowHandle, WindowManager};
 
 /// macOS 窗口管理器（基于 AXUIElement API）
 pub struct MacWindowManager;
@@ -49,7 +49,10 @@ impl MacWindowManager {
     }
 
     /// 从 UI 元素向上查找窗口
-    fn find_window_from_element(&self, element: *const std::ffi::c_void) -> Option<MacWindowHandle> {
+    fn find_window_from_element(
+        &self,
+        element: *const std::ffi::c_void,
+    ) -> Option<MacWindowHandle> {
         unsafe {
             extern "C" {
                 fn AXUIElementCopyAttributeValue(
@@ -57,10 +60,7 @@ impl MacWindowManager {
                     attribute: *const std::ffi::c_void,
                     value: *mut *const std::ffi::c_void,
                 ) -> i32;
-                fn AXUIElementGetPid(
-                    element: *const std::ffi::c_void,
-                    pid: *mut i32,
-                ) -> i32;
+                fn AXUIElementGetPid(element: *const std::ffi::c_void, pid: *mut i32) -> i32;
             }
 
             use core_foundation::base::TCFType;
@@ -119,9 +119,8 @@ impl MacWindowManager {
                     &mut role_ref,
                 );
                 if r == 0 && !role_ref.is_null() {
-                    let role_cfstr = core_foundation::string::CFString::wrap_under_create_rule(
-                        role_ref as _,
-                    );
+                    let role_cfstr =
+                        core_foundation::string::CFString::wrap_under_create_rule(role_ref as _);
                     if role_cfstr.to_string() == window_role {
                         return Some(current);
                     }

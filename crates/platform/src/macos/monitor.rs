@@ -28,8 +28,7 @@ impl MonitorManager for MacMonitorManager {
 
             // 获取主屏幕高度用于坐标转换
             // NSScreen 坐标原点在左下角，Quartz/AX 坐标原点在左上角
-            let main_screen: *mut objc::runtime::Object =
-                msg_send![screens, objectAtIndex: 0usize];
+            let main_screen: *mut objc::runtime::Object = msg_send![screens, objectAtIndex: 0usize];
             let main_frame: cocoa::foundation::NSRect = msg_send![main_screen, frame];
             let global_height = main_frame.size.height;
 

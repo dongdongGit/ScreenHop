@@ -1,10 +1,9 @@
 use anyhow::Result;
-use slint::ComponentHandle;
 use muda::{Menu, MenuItem, PredefinedMenuItem};
-use tray_icon::{menu::MenuEvent, Icon, TrayIconBuilder};
 use screenhop::config::AppConfig;
-
+use slint::ComponentHandle;
 use std::sync::{Arc, Mutex};
+use tray_icon::{menu::MenuEvent, Icon, TrayIconBuilder};
 
 const MENU_ID_TOGGLE: &str = "toggle";
 const MENU_ID_AUTOSTART: &str = "autostart";
@@ -63,17 +62,49 @@ fn do_check_update(
                             result.current_version,
                             result.latest_version
                         );
-                        
-                        let should_update = screenhop::confirm!(
-                            "ScreenHop 更新",
-                            &format!("发现新版本: {} \n是否立即下载并安装？", result.latest_version)
-                        );
+
+                        #[cfg(target_os = "macos")]
+                        let should_update = {
+                            let mut flag = false;
+                            let script = format!(
+                                "display dialog \"发现新版本: {} \\n是否立即下载并安装？\" with title \"ScreenHop 更新\" buttons {{\"稍后\", \"立即更新\"}} default button 2",
+                                result.latest_version
+                            );
+                            if let Ok(out) = std::process::Command::new("osascript").arg("-e").arg(&script).output() {
+                                if String::from_utf8_lossy(&out.stdout).contains("立即更新") {
+                                    flag = true;
+                                }
+                            }
+                            flag
+                        };
+
+                        #[cfg(target_os = "windows")]
+                        let should_update = {
+                            use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONINFORMATION, MB_OKCANCEL, IDOK};
+                            use windows::core::{HSTRING, PCWSTR};
+
+                            let text = format!("发现新版本: {}\n是否立即下载并安装？", result.latest_version);
+                            let title = "ScreenHop 更新";
+
+                            let h_text = HSTRING::from(text);
+                            let h_title = HSTRING::from(title);
+
+                            unsafe {
+                                MessageBoxW(
+                                    None,
+                                    PCWSTR(h_text.as_ptr()),
+                                    PCWSTR(h_title.as_ptr()),
+                                    MB_ICONINFORMATION | MB_OKCANCEL,
+                                ) == IDOK
+                            }
+                        };
+
 
                         if !should_update {
                             log::info!("用户取消了更新");
                             return;
                         }
-                        
+
                         // 2. 显示进度对话框并开始下载
                         if let Some(download_url) = result.download_url {
                             let proxy_url_clone2 = proxy_url.clone();
@@ -90,13 +121,13 @@ fn do_check_update(
                                     dialog.set_status_text("准备下载...".into());
                                     dialog.set_progress(0.0);
                                     dialog.set_can_cancel(true);
-                                    
+
                                     let dialog_weak = dialog.as_weak();
-                                    
+
                                     // 标记是否取消下载
                                     let is_cancelled = Arc::new(AtomicBool::new(false));
                                     let is_cancelled_clone = is_cancelled.clone();
-                                    
+
                                     dialog.on_cancel(move || {
                                         is_cancelled_clone.store(true, Ordering::SeqCst);
                                         // 立即隐藏对话框，无需等待后台线程结束
@@ -104,19 +135,19 @@ fn do_check_update(
                                             let _ = d.hide();
                                         }
                                     });
-                                    
+
                                     let _ = dialog.show();
-                                    
+
                                     // 共享状态供后台线程和UI线程通讯 (progress, text, can_cancel, finished)
                                     let progress_state = Arc::new(std::sync::Mutex::new((0.0f32, String::new(), true, false)));
-                                    
+
                                     let timer_rc = std::rc::Rc::new(std::cell::RefCell::new(Some(slint::Timer::default())));
                                     let timer_clone = timer_rc.clone();
-                                    
+
                                     let progress_state_timer = progress_state.clone();
                                     let is_cancelled_timer = is_cancelled.clone();
                                     let d_weak_timer = dialog.as_weak();
-                                    
+
                                     timer_rc.borrow().as_ref().unwrap().start(slint::TimerMode::Repeated, std::time::Duration::from_millis(100), move || {
                                         let mut finished = false;
                                         let is_cancelled_now = is_cancelled_timer.load(Ordering::SeqCst);
@@ -153,7 +184,7 @@ fn do_check_update(
                                             }
                                         }
                                     });
-                                    
+
                                     // 3. 在新线程中执行下载及解压
                                     let progress_state_thread = progress_state.clone();
                                     let is_cancelled_thread = is_cancelled.clone();
@@ -163,22 +194,22 @@ fn do_check_update(
                                             let extract_dir = std::env::temp_dir().join("screenhop_update");
                                             let _ = std::fs::remove_dir_all(&extract_dir); // 清理旧缓存
                                             std::fs::create_dir_all(&extract_dir).unwrap();
-                                            
+
                                             log::info!("开始下载并解压到: {:?}", extract_dir);
-                                            
+
                                             // 定义进度回调
                                             let progress_state_cb = progress_state_thread.clone();
                                             let progress_cb = move |downloaded: u64, total: u64| {
                                                 let pct = if total > 0 { downloaded as f32 / total as f32 } else { 0.0 };
                                                 let mb_downloaded = downloaded as f32 / 1024.0 / 1024.0;
                                                 let mb_total = total as f32 / 1024.0 / 1024.0;
-                                                
+
                                                 let text = format!("正在下载: {:.1} MB / {:.1} MB", mb_downloaded, mb_total);
                                                 let mut state = progress_state_cb.lock().unwrap();
                                                 state.0 = pct;
                                                 state.1 = text;
                                             };
-                                            
+
                                             // 执行下载和解压
                                             let dl_res = screenhop::updater::download_and_extract(
                                                 &download_url,
@@ -188,14 +219,14 @@ fn do_check_update(
                                                 proxy_password_clone2.as_deref(),
                                                 progress_cb
                                             ).await;
-                                            
+
                                             if is_cancelled_thread.load(Ordering::SeqCst) {
                                                 log::info!("用户已取消更新");
                                                 let mut state = progress_state_thread.lock().unwrap();
                                                 state.3 = true; // finish
                                                 return;
                                             }
-                                            
+
                                             match dl_res {
                                                 Ok(_) => {
                                                     // 4. 下载解压成功，执行应用替换逻辑
@@ -205,14 +236,14 @@ fn do_check_update(
                                                         state.0 = 1.0;
                                                         state.2 = false;
                                                     }
-                                                    
+
                                                     // 应用更新
                                                     #[cfg(target_os = "macos")]
                                                     let apply_res = screenhop::updater::apply_update_macos(&extract_dir);
-                                                    
+
                                                     #[cfg(target_os = "windows")]
                                                     let apply_res = screenhop::updater::apply_update_windows(&extract_dir);
-                                                    
+
                                                     if let Err(e) = apply_res {
                                                         log::error!("应用更新失败: {:?}", e);
                                                         let mut state = progress_state_thread.lock().unwrap();
@@ -242,10 +273,35 @@ fn do_check_update(
                     } else {
                         log::info!("当前已是最新版本 ({})", result.current_version);
                         if manual {
-                            screenhop::alert!(
-                                "ScreenHop 更新",
-                                &format!("当前已是最新版本 ({})", result.current_version)
-                            );
+                            #[cfg(target_os = "macos")]
+                            {
+                                let script = format!(
+                                    "display dialog \"当前已是最新版本 ({})\" with title \"ScreenHop 更新\" buttons {{\"确定\"}} default button 1",
+                                    result.current_version
+                                );
+                                let _ = std::process::Command::new("osascript").arg("-e").arg(&script).output();
+                            }
+
+                            #[cfg(target_os = "windows")]
+                            {
+                                use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONINFORMATION, MB_OK};
+                                use windows::core::{HSTRING, PCWSTR};
+
+                                let text = format!("当前已是最新版本 ({})", result.current_version);
+                                let title = "ScreenHop 更新";
+
+                                let h_text = HSTRING::from(text);
+                                let h_title = HSTRING::from(title);
+
+                                unsafe {
+                                    MessageBoxW(
+                                        None,
+                                        PCWSTR(h_text.as_ptr()),
+                                        PCWSTR(h_title.as_ptr()),
+                                        MB_ICONINFORMATION | MB_OK,
+                                    );
+                                }
+                            }
                         }
                     }
                 }
@@ -263,8 +319,6 @@ fn do_check_update(
     });
 }
 
-
-
 struct MenuItems {
     toggle_item: MenuItem,
     autostart_item: MenuItem,
@@ -275,7 +329,7 @@ struct MenuItems {
 /// 运行托盘应用主循环
 pub fn run_app(config: AppConfig) -> Result<()> {
     // 我们现在使用 slint::run_event_loop_until_quit()，不再需要隐藏窗口来维持事件循环
-    
+
     let config = Arc::new(Mutex::new(config));
 
     // 创建菜单
@@ -313,7 +367,7 @@ pub fn run_app(config: AppConfig) -> Result<()> {
         true,
         None,
     );
-    
+
     let proxy_menu = muda::Submenu::new("代理设置", true);
     let proxy_enable_item = MenuItem::with_id(
         MENU_ID_PROXY_ENABLE,
@@ -328,12 +382,7 @@ pub fn run_app(config: AppConfig) -> Result<()> {
         true,
         None,
     );
-    let proxy_settings_item = MenuItem::with_id(
-        MENU_ID_PROXY_SETTINGS,
-        "代理设置...",
-        true,
-        None,
-    );
+    let proxy_settings_item = MenuItem::with_id(MENU_ID_PROXY_SETTINGS, "代理设置...", true, None);
     proxy_menu.append(&proxy_enable_item).ok();
     proxy_menu.append(&proxy_settings_item).ok();
 
@@ -365,24 +414,29 @@ pub fn run_app(config: AppConfig) -> Result<()> {
     // - 若配置了 test_update_version（mock 测试模式），无论 auto_check_update 如何都强制触发
     {
         let cfg = config.lock().unwrap();
-        let has_mock = cfg.test_update_version.is_some();
-        if cfg.auto_check_update || has_mock {
-            if has_mock {
-                log::warn!("[mock模式] 检测到 test_update_version，强制触发更新检查...");
-            } else {
-                log::info!("启动时自动检查更新...");
-            }
-            let (proxy_url, proxy_username, proxy_password) = if cfg.proxy_enabled && !cfg.proxy_url.is_empty() {
-                (Some(cfg.proxy_url.clone()), cfg.proxy_username.clone(), cfg.proxy_password.clone())
-            } else {
-                (None, None, None)
-            };
-            let mock_version = cfg.test_update_version.clone();
-            let mock_url = cfg.test_update_url.clone();
-            do_check_update(env!("CARGO_PKG_VERSION"), proxy_url, proxy_username, proxy_password, false, mock_version, mock_url);
+        if cfg.auto_check_update || cfg.test_update_version.is_some() {
+            log::info!("启动时自动检查更新...");
+            let (proxy_url, proxy_username, proxy_password) =
+                if cfg.proxy_enabled && !cfg.proxy_url.is_empty() {
+                    (
+                        Some(cfg.proxy_url.clone()),
+                        cfg.proxy_username.clone(),
+                        cfg.proxy_password.clone(),
+                    )
+                } else {
+                    (None, None, None)
+                };
+            do_check_update(
+                env!("CARGO_PKG_VERSION"),
+                proxy_url,
+                proxy_username,
+                proxy_password,
+                false,
+                cfg.test_update_version.clone(),
+                cfg.test_update_url.clone(),
+            );
         }
     }
-
 
     // 在主线程处理 Slint 和 MenuEvents
     let menu_items = MenuItems {
@@ -393,52 +447,55 @@ pub fn run_app(config: AppConfig) -> Result<()> {
     };
     let config_clone = config.clone();
 
-
     #[cfg(target_os = "macos")]
     let mut macos_policy_set = false;
 
     // 定时检查 Menu事件
     let timer = slint::Timer::default();
-    timer.start(slint::TimerMode::Repeated, std::time::Duration::from_millis(50), move || {
-        // macOS: 在事件循环刚启动时将 NSApplication 激活策略设为 Accessory（不在 Dock 显示）
-        // 以覆盖 slint/winit 默认强设为 Regular 的行为
-        #[cfg(target_os = "macos")]
-        if !macos_policy_set {
-            #[allow(deprecated)]
-            unsafe {
-                use cocoa::appkit::NSApp;
-                use objc::*;
-                let app = NSApp();
-                let _: () = msg_send![app, setActivationPolicy: 1i64]; // Accessory
-                
-                // Set the application icon
-                let icon_bytes = include_bytes!("../assets/icon-256.png");
-                let data = cocoa::foundation::NSData::dataWithBytes_length_(
-                    cocoa::base::nil,
-                    icon_bytes.as_ptr() as *const std::ffi::c_void,
-                    icon_bytes.len() as u64,
-                );
-                let ns_image: cocoa::base::id = msg_send![class!(NSImage), alloc];
-                let ns_image: cocoa::base::id = msg_send![ns_image, initWithData: data];
-                if ns_image != cocoa::base::nil {
-                    let _: () = msg_send![app, setApplicationIconImage: ns_image];
-                }
-                
-                // 强制解除此后台应用对前台的抢占，把焦点还给此前的应用
-                // 修复首次点出托盘菜单时当前工作窗口突然失去焦点的 Bug
-                // (winit在 cargo run 期间会强制把我们变成 Regular，所以这步补救是必须的)
-                let _: () = msg_send![app, deactivate];
-            }
-            macos_policy_set = true;
-        }
+    timer.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_millis(50),
+        move || {
+            // macOS: 在事件循环刚启动时将 NSApplication 激活策略设为 Accessory（不在 Dock 显示）
+            // 以覆盖 slint/winit 默认强设为 Regular 的行为
+            #[cfg(target_os = "macos")]
+            if !macos_policy_set {
+                #[allow(deprecated)]
+                unsafe {
+                    use cocoa::appkit::NSApp;
+                    use objc::*;
+                    let app = NSApp();
+                    let _: () = msg_send![app, setActivationPolicy: 1i64]; // Accessory
 
-        while let Ok(event) = MenuEvent::receiver().try_recv() {
-            if event.id.0 == MENU_ID_QUIT {
-                std::process::exit(0);
+                    // Set the application icon
+                    let icon_bytes = include_bytes!("../assets/icon-256.png");
+                    let data = cocoa::foundation::NSData::dataWithBytes_length_(
+                        cocoa::base::nil,
+                        icon_bytes.as_ptr() as *const std::ffi::c_void,
+                        icon_bytes.len() as u64,
+                    );
+                    let ns_image: cocoa::base::id = msg_send![class!(NSImage), alloc];
+                    let ns_image: cocoa::base::id = msg_send![ns_image, initWithData: data];
+                    if ns_image != cocoa::base::nil {
+                        let _: () = msg_send![app, setApplicationIconImage: ns_image];
+                    }
+
+                    // 强制解除此后台应用对前台的抢占，把焦点还给此前的应用
+                    // 修复首次点出托盘菜单时当前工作窗口突然失去焦点的 Bug
+                    // (winit在 cargo run 期间会强制把我们变成 Regular，所以这步补救是必须的)
+                    let _: () = msg_send![app, deactivate];
+                }
+                macos_policy_set = true;
             }
-            handle_menu_event(&event.id.0, &menu_items, &config_clone);
-        }
-    });
+
+            while let Ok(event) = MenuEvent::receiver().try_recv() {
+                if event.id.0 == MENU_ID_QUIT {
+                    std::process::exit(0);
+                }
+                handle_menu_event(&event.id.0, &menu_items, &config_clone);
+            }
+        },
+    );
     slint::run_event_loop_until_quit()?;
     Ok(())
 }
@@ -448,9 +505,13 @@ fn handle_menu_event(id: &str, items: &MenuItems, config: &Arc<Mutex<AppConfig>>
         MENU_ID_TOGGLE => {
             if let Ok(mut cfg) = config.lock() {
                 cfg.disable_hook = !cfg.disable_hook;
-                let state = if cfg.disable_hook { "已禁用" } else { "已启用" };
+                let state = if cfg.disable_hook {
+                    "已禁用"
+                } else {
+                    "已启用"
+                };
                 log::info!("鼠标中键移动功能{}", state);
-                
+
                 let text = if cfg.disable_hook {
                     "启用鼠标中键移动"
                 } else {
@@ -494,10 +555,17 @@ fn handle_menu_event(id: &str, items: &MenuItems, config: &Arc<Mutex<AppConfig>>
                     if let Err(e) = auto.set_enabled(cfg.auto_start) {
                         log::error!("设置自启动失败: {:?}", e);
                         // 弹窗告知用户失败原因
-                        screenhop::alert_error!("ScreenHop", &format!("设置开机自启动失败:\n{}", e));
+                        screenhop::alert_error!(
+                            "ScreenHop",
+                            &format!("设置开机自启动失败:\n{}", e)
+                        );
                         // 回滚菜单状态
                         cfg.auto_start = !cfg.auto_start;
-                        items.autostart_item.set_text(if cfg.auto_start { "✓ 开机自动启动" } else { "  开机自动启动" });
+                        items.autostart_item.set_text(if cfg.auto_start {
+                            "✓ 开机自动启动"
+                        } else {
+                            "  开机自动启动"
+                        });
                     }
                 }
 
@@ -509,17 +577,38 @@ fn handle_menu_event(id: &str, items: &MenuItems, config: &Arc<Mutex<AppConfig>>
 
         MENU_ID_CHECK_UPDATE => {
             log::info!("手动检查更新...");
-            let (proxy_url, proxy_username, proxy_password, mock_version, mock_url) = match config.lock() { Ok(cfg) => {
-                let proxy = if cfg.proxy_enabled && !cfg.proxy_url.is_empty() {
-                    (Some(cfg.proxy_url.clone()), cfg.proxy_username.clone(), cfg.proxy_password.clone())
-                } else {
-                    (None, None, None)
+            let (proxy_url, proxy_username, proxy_password, mock_version, mock_url) =
+                match config.lock() {
+                    Ok(cfg) => {
+                        if cfg.proxy_enabled && !cfg.proxy_url.is_empty() {
+                            (
+                                Some(cfg.proxy_url.clone()),
+                                cfg.proxy_username.clone(),
+                                cfg.proxy_password.clone(),
+                                cfg.test_update_version.clone(),
+                                cfg.test_update_url.clone(),
+                            )
+                        } else {
+                            (
+                                None,
+                                None,
+                                None,
+                                cfg.test_update_version.clone(),
+                                cfg.test_update_url.clone(),
+                            )
+                        }
+                    }
+                    _ => (None, None, None, None, None),
                 };
-                (proxy.0, proxy.1, proxy.2, cfg.test_update_version.clone(), cfg.test_update_url.clone())
-            } _ => {
-                (None, None, None, None, None)
-            }};
-            do_check_update(env!("CARGO_PKG_VERSION"), proxy_url, proxy_username, proxy_password, true, mock_version, mock_url);
+            do_check_update(
+                env!("CARGO_PKG_VERSION"),
+                proxy_url,
+                proxy_username,
+                proxy_password,
+                true,
+                mock_version,
+                mock_url,
+            );
         }
         MENU_ID_AUTO_CHECK_UPDATE => {
             if let Ok(mut cfg) = config.lock() {
@@ -563,26 +652,33 @@ fn handle_menu_event(id: &str, items: &MenuItems, config: &Arc<Mutex<AppConfig>>
         }
         MENU_ID_PROXY_SETTINGS => {
             let (mut address, mut port, mut protocol, mut username, mut password, mut enabled) = (
-                "127.0.0.1".to_string(), "2888".to_string(), "SOCKS5".to_string(),
-                String::new(), String::new(), false
+                "127.0.0.1".to_string(),
+                "2888".to_string(),
+                "SOCKS5".to_string(),
+                String::new(),
+                String::new(),
+                false,
             );
-            
+
             if let Ok(cfg) = config.lock() {
                 enabled = cfg.proxy_username.is_some();
                 username = cfg.proxy_username.clone().unwrap_or_default();
                 password = cfg.proxy_password.clone().unwrap_or_default();
-                
+
                 if !cfg.proxy_url.is_empty() {
-                    let url = &cfg.proxy_url;
-                    let (scheme, rest) = url.split_once("://").unwrap_or(("socks5", url));
-                    
-                    protocol = match scheme.to_lowercase().as_str() {
+                    let url = cfg.proxy_url.as_str();
+                    let (scheme, rest): (&str, &str) =
+                        url.split_once("://").unwrap_or(("socks5", url));
+
+                    let scheme = scheme.to_ascii_lowercase();
+                    protocol = match scheme.as_str() {
                         "socks4" | "socks4a" => "SOCKS4",
                         "https" => "HTTPS",
                         "http" => "HTTP",
                         _ => "SOCKS5",
-                    }.to_string();
-                    
+                    }
+                    .to_string();
+
                     if let Some((addr, p)) = rest.split_once(':') {
                         address = addr.to_string();
                         port = p.to_string();
@@ -591,19 +687,19 @@ fn handle_menu_event(id: &str, items: &MenuItems, config: &Arc<Mutex<AppConfig>>
                     }
                 }
             }
-            
+
             let dialog = crate::slint_ui::ProxyAuthDialog::new().unwrap();
-            
+
             #[cfg(target_os = "windows")]
             dialog.set_text_font("Microsoft YaHei".into());
-            
+
             dialog.set_address(address.into());
             dialog.set_port(port.into());
             dialog.set_protocol(protocol.into());
             dialog.set_auth_enabled(enabled);
             dialog.set_username(username.into());
             dialog.set_password(password.into());
-            
+
             let dialog_weak2 = dialog.as_weak();
             dialog.on_cancel(move || {
                 if let Some(d) = dialog_weak2.upgrade() {
@@ -614,41 +710,48 @@ fn handle_menu_event(id: &str, items: &MenuItems, config: &Arc<Mutex<AppConfig>>
             let dialog_weak = dialog.as_weak();
             let config_clone = config.clone();
             let proxy_enable_item_clone = items.proxy_enable_item.clone();
-            
-            dialog.on_apply(move |addr, p, proto: slint::SharedString, auth_en: bool, user: slint::SharedString, pass: slint::SharedString| {
-                let proxy_url_str = match proto.as_str() {
-                    "SOCKS5" => format!("socks5://{}:{}", addr, p),
-                    "SOCKS4" => format!("socks4://{}:{}", addr, p),
-                    "HTTPS" => format!("https://{}:{}", addr, p),
-                    "HTTP" => format!("http://{}:{}", addr, p),
-                    _ => format!("socks5://{}:{}", addr, p),
-                };
 
-                if let Ok(mut cfg) = config_clone.lock() {
-                    cfg.proxy_url = proxy_url_str.clone();
-                    cfg.proxy_enabled = true;
-                    if auth_en && !user.is_empty() {
-                        cfg.proxy_username = Some(user.into());
-                        cfg.proxy_password = Some(pass.into());
-                    } else {
-                        cfg.proxy_username = None;
-                        cfg.proxy_password = None;
+            dialog.on_apply(
+                move |addr,
+                      p,
+                      proto: slint::SharedString,
+                      auth_en: bool,
+                      user: slint::SharedString,
+                      pass: slint::SharedString| {
+                    let proxy_url_str = match proto.as_str() {
+                        "SOCKS5" => format!("socks5://{}:{}", addr, p),
+                        "SOCKS4" => format!("socks4://{}:{}", addr, p),
+                        "HTTPS" => format!("https://{}:{}", addr, p),
+                        "HTTP" => format!("http://{}:{}", addr, p),
+                        _ => format!("socks5://{}:{}", addr, p),
+                    };
+
+                    if let Ok(mut cfg) = config_clone.lock() {
+                        cfg.proxy_url = proxy_url_str.clone();
+                        cfg.proxy_enabled = true;
+                        if auth_en && !user.is_empty() {
+                            cfg.proxy_username = Some(user.into());
+                            cfg.proxy_password = Some(pass.into());
+                        } else {
+                            cfg.proxy_username = None;
+                            cfg.proxy_password = None;
+                        }
+
+                        log::info!("代理地址及认证已配置: {}", cfg.proxy_url);
+                        proxy_enable_item_clone.set_text("✓ 启用代理");
+
+                        if let Err(e) = cfg.save() {
+                            log::error!("保存配置失败: {}", e);
+                        }
                     }
-                    
-                    log::info!("代理地址及认证已配置: {}", cfg.proxy_url);
-                    proxy_enable_item_clone.set_text("✓ 启用代理");
-                    
-                    if let Err(e) = cfg.save() {
-                        log::error!("保存配置失败: {}", e);
+                    if let Some(d) = dialog_weak.upgrade() {
+                        let _ = d.hide();
                     }
-                }
-                if let Some(d) = dialog_weak.upgrade() {
-                    let _ = d.hide();
-                }
-            });
-            
+                },
+            );
+
             let _ = dialog.show();
-            
+
             // macOS: 强制激活当前应用并将其置于前台，解决第一次启动不聚焦的问题
             #[cfg(target_os = "macos")]
             #[allow(deprecated)]

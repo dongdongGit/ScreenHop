@@ -118,7 +118,8 @@ fn main() {
     // 在 Windows 无控制台模式下，这是唯一能感知后台崩溃的途径
     let err_log_path_clone = err_log_path.clone();
     std::panic::set_hook(Box::new(move |info| {
-        let location = info.location()
+        let location = info
+            .location()
             .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
             .unwrap_or_else(|| "unknown".to_string());
         let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {

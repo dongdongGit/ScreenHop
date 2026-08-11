@@ -6,4 +6,4 @@ pub mod monitor;
 pub mod updater;
 
 // Re-export platform 类型供外部使用
-pub use screenhop_platform::{Point, Rect, MonitorInfo};
+pub use screenhop_platform::{MonitorInfo, Point, Rect};

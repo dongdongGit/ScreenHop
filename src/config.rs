@@ -43,7 +43,6 @@ pub struct AppConfig {
     pub proxy_password: Option<String>,
 
     // ── 本地更新测试（仅开发调试使用） ──
-
     /// 模拟"发现新版本"的版本号（如 "999.0.0"）
     /// 设置后跳过 GitHub API 请求，直接触发更新弹窗，用于本地测试完整更新流程
     #[serde(default)]
@@ -90,8 +89,7 @@ impl AppConfig {
             .context("无法获取配置目录")?
             .join("screenhop");
 
-        fs::create_dir_all(&config_dir)
-            .context("无法创建配置目录")?;
+        fs::create_dir_all(&config_dir).context("无法创建配置目录")?;
 
         Ok(config_dir.join("config.toml"))
     }
@@ -109,8 +107,7 @@ impl AppConfig {
         let content = fs::read_to_string(&path)
             .with_context(|| format!("无法读取配置文件: {}", path.display()))?;
 
-        let config: Self = toml::from_str(&content)
-            .with_context(|| "配置文件格式错误")?;
+        let config: Self = toml::from_str(&content).with_context(|| "配置文件格式错误")?;
 
         Ok(config)
     }
@@ -119,8 +116,7 @@ impl AppConfig {
     pub fn save(&self) -> Result<()> {
         let path = Self::config_path()?;
 
-        let content = toml::to_string_pretty(self)
-            .context("配置序列化失败")?;
+        let content = toml::to_string_pretty(self).context("配置序列化失败")?;
 
         fs::write(&path, content)
             .with_context(|| format!("无法写入配置文件: {}", path.display()))?;

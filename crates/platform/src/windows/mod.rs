@@ -1,8 +1,8 @@
-pub mod hook;
-pub mod window;
-pub mod monitor;
-pub mod hittest;
 pub mod autostart;
+pub mod hittest;
+pub mod hook;
+pub mod monitor;
+pub mod window;
 
 /// Windows 平台窗口句柄（HWND 的包装）
 #[derive(Debug, Clone)]

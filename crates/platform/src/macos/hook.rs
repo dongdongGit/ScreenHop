@@ -48,9 +48,9 @@ impl MacMouseHook {
 
             extern "C" {
                 fn CGEventTapCreate(
-                    tap: u32,       // CGEventTapLocation
-                    place: u32,     // CGEventTapPlacement
-                    options: u32,   // CGEventTapOptions
+                    tap: u32,                // CGEventTapLocation
+                    place: u32,              // CGEventTapPlacement
+                    options: u32,            // CGEventTapOptions
                     events_of_interest: u64, // CGEventMask
                     callback: CGEventTapCallBack,
                     user_info: *mut std::ffi::c_void,
