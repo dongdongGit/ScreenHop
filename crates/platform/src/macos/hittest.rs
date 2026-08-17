@@ -318,19 +318,15 @@ impl MacHitTester {
     {
         let mut found_interactive = false;
 
-        for (depth, role) in roles
-            .into_iter()
-            .take(Self::INTERACTIVE_ROLE_MAX_DEPTH)
-            .enumerate()
-        {
+        for role in roles.into_iter().take(Self::INTERACTIVE_ROLE_MAX_DEPTH) {
             let role = role.as_ref();
-
-            if role == "AXTabGroup" {
-                return found_interactive || depth != 1;
-            }
 
             if role == "AXToolbar" {
                 return false;
+            }
+
+            if role == "AXTabGroup" {
+                return found_interactive;
             }
 
             if Self::INTERACTIVE_TAB_ROLES.contains(&role) {
@@ -338,7 +334,7 @@ impl MacHitTester {
             }
         }
 
-        found_interactive
+        false
     }
 
     fn is_chrome_bundle_id(bundle_id: Option<&str>) -> bool {
@@ -676,8 +672,17 @@ mod tests {
     use crate::{Point, Rect};
 
     #[test]
-    fn chrome_tab_role_chain_without_tab_group_is_interactive() {
+    fn chrome_static_text_outside_tab_group_allows_move() {
         let roles = ["AXStaticText", "AXGroup", "AXWindow"];
+
+        assert!(!MacHitTester::is_interactive_tab_role_chain(
+            roles.iter().copied()
+        ));
+    }
+
+    #[test]
+    fn chrome_static_text_inside_tab_group_is_interactive() {
+        let roles = ["AXStaticText", "AXTabGroup", "AXWindow"];
 
         assert!(MacHitTester::is_interactive_tab_role_chain(
             roles.iter().copied()
