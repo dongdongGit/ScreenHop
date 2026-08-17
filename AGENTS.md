@@ -33,7 +33,7 @@
 **ScreenHop** 是一个跨平台桌面应用（macOS & Windows），通过鼠标中键点击实现窗口在多显示器之间的快速移动。使用 Rust 构建，追求高性能。
 
 - **仓库**: https://github.com/EcoRoundDev/ScreenHop
-- **版本**: 1.1.1
+- **版本**: 1.1.2
 - **许可证**: MIT
 
 ## 架构
