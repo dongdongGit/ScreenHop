@@ -20,8 +20,9 @@ use windows::Win32::{
     },
     System::{
         Registry::{
-            RegCloseKey, RegDeleteValueW, RegGetValueW, RegOpenKeyExW, RegSetValueExW, HKEY,
-            HKEY_CURRENT_USER, KEY_ALL_ACCESS, REG_SZ, REG_VALUE_TYPE, RRF_RT_REG_SZ,
+            RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegGetValueW, RegSetValueExW, HKEY,
+            HKEY_CURRENT_USER, KEY_QUERY_VALUE, KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ,
+            REG_VALUE_TYPE, RRF_RT_REG_SZ,
         },
         SystemInformation::GetLocalTime,
         Threading::{GetCurrentProcess, OpenProcessToken, CREATE_NO_WINDOW},
@@ -207,16 +208,20 @@ impl RegKey {
     fn new_hkcu(subkey: PCWSTR, name: PCWSTR) -> Result<RegKey> {
         let mut hkey = HKEY::default();
         unsafe {
-            RegOpenKeyExW(
+            RegCreateKeyExW(
                 HKEY_CURRENT_USER,
                 subkey,
                 0,
-                KEY_ALL_ACCESS,
+                PCWSTR::null(),
+                REG_OPTION_NON_VOLATILE,
+                KEY_QUERY_VALUE | KEY_SET_VALUE,
+                None,
                 &mut hkey as *mut _,
+                None,
             )
         }
         .ok()
-        .map_err(|err| anyhow!("Fail to open reg key, {:?}", err))?;
+        .map_err(|err| anyhow!("Fail to open or create reg key, {:?}", err))?;
         Ok(RegKey { hkey, name })
     }
 
@@ -256,9 +261,12 @@ impl RegKey {
     }
 
     fn delete_value(&self) -> Result<()> {
-        unsafe { RegDeleteValueW(self.hkey, self.name) }
-            .ok()
-            .map_err(|err| anyhow!("Failed to delete reg value, {:?}", err))?;
+        let result = unsafe { RegDeleteValueW(self.hkey, self.name) };
+        if result != ERROR_FILE_NOT_FOUND {
+            result
+                .ok()
+                .map_err(|err| anyhow!("Failed to delete reg value, {:?}", err))?;
+        }
         Ok(())
     }
 }
@@ -346,11 +354,7 @@ fn exist_scheduled_task(name: &str) -> Result<bool> {
 fn create_task_file(name: &str, exe_path: &str) -> Result<String> {
     let (author, user_id) = get_author_and_userid()?;
     let current_time = get_current_time();
-    let command_path = if exe_path.contains(char::is_whitespace) {
-        format!("\"{exe_path}\"")
-    } else {
-        exe_path.to_string()
-    };
+    let command_path = exe_path.to_string();
 
     let xml_data = format!(
         r#"<?xml version="1.0" encoding="UTF-16"?>
@@ -401,7 +405,12 @@ fn create_task_file(name: &str, exe_path: &str) -> Result<String> {
     );
     let xml_path = env::temp_dir().join(format!("{name}-task.xml"));
     let xml_path_str = xml_path.display().to_string();
-    fs::write(&xml_path_str, xml_data)?;
+    let mut xml_bytes = Vec::with_capacity((xml_data.len() + 1) * 2);
+    xml_bytes.extend_from_slice(&[0xFF, 0xFE]);
+    for unit in xml_data.encode_utf16() {
+        xml_bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    fs::write(&xml_path, xml_bytes)?;
     Ok(xml_path_str)
 }
 

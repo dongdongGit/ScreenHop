@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/platform", "."]
 
 [workspace.package]
-version = "1.1.2"
+version = "1.1.3"
 edition = "2021"
 authors = ["EcoRoundDev"]
 license = "MIT"
